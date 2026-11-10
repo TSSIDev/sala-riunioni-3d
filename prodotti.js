@@ -62,5 +62,5 @@ export const PRODOTTI = [
     nota: 'Tiene accesi switch e processori se salta la corrente.' },
   { voce: 32, n: 1, gruppo: 'Rete e alimentazione', modello: 'Link LK1922U66N', ruolo: 'Armadio rack 19” 22U', dove: 'Locale tecnico',
     dati: [['Formato', '22U, 600 x 600 mm, porta in vetro']],
-    nota: 'Raccoglie gli apparati, in comune con le altre sale. Solo se Comet non ha già un armadio.' },
+    nota: 'Raccoglie gli apparati, in comune con le altre sale. Solo se il cliente non ha già un armadio.' },
 ];
