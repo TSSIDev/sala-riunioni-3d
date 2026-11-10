@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sala CdA</title>
+<style>
+  /* Linguaggio: tavola tecnica d'architetto. Bahnschrift (DIN 1451, installato su Windows 10/11) per numeri ed etichette,
+     Segoe UI per il testo; fondo scuro quasi pieno, linee sottili, un solo accento color rovere come le lamelle della sala. */
+  :root {
+    color-scheme: dark;
+    --ink: #eee8dc; --dim: rgba(238,232,220,.64); --faint: rgba(238,232,220,.54); --rule: rgba(238,232,220,.14);
+    --sheet: rgba(17,16,14,.9); --sheet-pieno: rgba(15,14,12,.95);
+    --oak: #c9a36a; --oak-rule: rgba(201,163,106,.42); --oak-wash: rgba(201,163,106,.08);
+    --tech: "Bahnschrift", "DIN Alternate", "D-DIN", "Roboto Condensed", ui-sans-serif, sans-serif;
+    --text: "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #14130f; overflow: hidden; font: 15px/1.4 var(--text); color: var(--ink); }
+  canvas { display: block; position: fixed; inset: 0; }
+  [hidden] { display: none !important; }
+  .tech { font-family: var(--tech); font-stretch: 87.5%; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+  kbd { font: 500 12px/1 var(--tech); font-stretch: 87.5%; color: var(--ink); min-width: 22px; padding: 4px 6px 3px; text-align: center;
+    border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; display: inline-block; }
+
+  /* --- cartiglio in alto a sinistra ---------------------------------------------------------------- */
+  #titolo { position: fixed; left: 18px; top: 18px; pointer-events: none; min-width: 210px; background: var(--sheet); border: 1px solid var(--rule);
+    border-radius: 3px; transition: opacity .5s; }
+  #titolo .riga { display: flex; justify-content: space-between; gap: 18px; padding: 7px 12px; }
+  #titolo .riga + .riga { border-top: 1px solid var(--rule); }
+  #titolo .rif { font-size: 11px; color: var(--faint); letter-spacing: .1em; text-transform: uppercase; }
+  #titolo h1 { margin: 0; font: 600 21px/1.1 var(--tech); font-stretch: 87.5%; letter-spacing: .01em; }
+  #titolo .stato { font-size: 12px; color: var(--dim); align-items: center; }
+  #titolo .stato b { font: 600 13px var(--tech); color: var(--oak); }
+  #titolo .stato kbd { margin-right: 5px; font-size: 11px; padding: 3px 5px 2px; }
+  #titolo.discreto { opacity: .7; }
+
+  /* --- schermata d'ingresso e caricamento ----------------------------------------------------------- */
+  #ingresso { all: unset; position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); cursor: pointer; width: min(480px, calc(100vw - 32px));
+    background: var(--sheet-pieno); border: 1px solid var(--rule); border-radius: 3px; }
+  #ingresso:focus-visible { outline: 1.5px solid var(--oak); outline-offset: 3px; }
+  #ingresso .testa { padding: 20px 22px 16px; border-bottom: 1px solid var(--rule); }
+  #ingresso .rif { font: 11px var(--tech); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  #ingresso strong { display: flex; align-items: baseline; justify-content: space-between; margin-top: 6px; font: 600 24px/1.1 var(--tech); font-stretch: 87.5%; }
+  #ingresso strong span { font: 400 13px var(--text); color: var(--oak); }
+  #ingresso:hover strong span { text-decoration: underline; text-underline-offset: 4px; }
+  #ingresso ul { list-style: none; margin: 0; padding: 12px 22px 18px; display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; align-items: center;
+    font-size: 13.5px; color: var(--dim); }
+  #ingresso li { display: contents; }
+  #ingresso li span:first-child { display: flex; gap: 4px; }
+  #carica { position: fixed; inset: 0; display: grid; place-content: center; gap: 14px; background: #14130f; transition: opacity .7s; text-align: center; }
+  #carica div:first-child { font: 13px var(--tech); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  #carica.via { opacity: 0; pointer-events: none; }
+  #barra { width: 240px; height: 1px; background: var(--rule); }
+  #barra i { display: block; height: 100%; width: 0; background: var(--oak); transition: width .25s; }
+
+  /* --- mirino, angoli e richiamo -------------------------------------------------------------------- */
+  #mirino { position: fixed; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; pointer-events: none;
+    background: var(--ink); opacity: .8; box-shadow: 0 0 0 1px rgba(0,0,0,.3); transition: width .18s, height .18s, margin .18s, background-color .18s; }
+  #mirino.su { width: 18px; height: 18px; margin: -9px 0 0 -9px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink), 0 0 0 1px rgba(0,0,0,.25), inset 0 0 0 2.5px rgba(0,0,0,.2); }
+  #cornice { position: fixed; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity .16s; }
+  #cornice.su { opacity: 1; }
+  #cornice i { position: absolute; width: 11px; height: 11px; border: 0 solid var(--ink); filter: drop-shadow(0 0 1px rgba(0,0,0,.75)) drop-shadow(0 0 2px rgba(0,0,0,.35)); }
+  #cornice i:nth-child(1) { left: 0; top: 0; border-width: 1.5px 0 0 1.5px; }
+  #cornice i:nth-child(2) { right: 0; top: 0; border-width: 1.5px 1.5px 0 0; }
+  #cornice i:nth-child(3) { right: 0; bottom: 0; border-width: 0 1.5px 1.5px 0; }
+  #cornice i:nth-child(4) { left: 0; bottom: 0; border-width: 0 0 1.5px 1.5px; }
+  #richiamo { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .2s; overflow: visible; }
+  #richiamo.su { opacity: 1; }
+  #richiamo path { fill: none; stroke: var(--ink); stroke-width: 1; opacity: .8; filter: drop-shadow(0 0 1px rgba(0,0,0,.6)); }
+  #richiamo circle { fill: var(--ink); filter: drop-shadow(0 0 1px rgba(0,0,0,.6)); }
+
+  /* --- scheda del prodotto puntato ------------------------------------------------------------------ */
+  #scheda { position: fixed; left: 50%; top: 50%; width: 318px; pointer-events: none; background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px;
+    box-shadow: 0 20px 40px -20px rgba(0,0,0,.6); opacity: 0; transform: translate(-4px, 0); transition: opacity .2s ease-out, transform .2s ease-out; }
+  #scheda.su { opacity: 1; transform: none; }
+  .intestazione { display: flex; align-items: stretch; border-bottom: 1px solid var(--rule); }
+  .intestazione > * { padding: 7px 12px 6px; font: 12px/1.2 var(--tech); font-stretch: 87.5%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .intestazione .voce { color: var(--oak); border-right: 1px solid var(--rule); }
+  .intestazione .voce b { font-size: 15px; font-weight: 600; letter-spacing: .02em; margin-left: 4px; }
+  .intestazione .pezzi { border-right: 1px solid var(--rule); color: var(--ink); font-size: 14px; letter-spacing: .02em; text-transform: none; }
+  .intestazione .gruppo { margin-left: auto; align-self: center; }
+  #scheda .corpo { padding: 12px 14px 14px; }
+  #scheda h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.005em; }
+  #scheda .ruolo { margin: 2px 0 0; font-size: 13.5px; color: var(--dim); }
+  .dati { display: grid; grid-template-columns: 86px 1fr; gap: 5px 12px; margin: 11px 0 0; padding-top: 10px; border-top: 1px dashed var(--rule); font-size: 13px; }
+  .dati dt { font: 11px/1.7 var(--tech); font-stretch: 87.5%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .dati dd { margin: 0; }
+  .nota { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink); opacity: .88; }
+  body:not(.dentro) #mirino, body:not(.dentro) #cornice, body:not(.dentro) #scheda, body:not(.dentro) #richiamo,
+  body.abaco #mirino, body.abaco #cornice, body.abaco #scheda, body.abaco #richiamo { visibility: hidden; }
+
+  /* --- abaco: inventario della sala ----------------------------------------------------------------- */
+  #velo { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s;
+    background: linear-gradient(to left, rgba(9,8,7,.62) 0, rgba(9,8,7,.38) 480px, rgba(9,8,7,.12) 100%); }
+  body.abaco #velo { opacity: 1; }
+  #abaco { position: fixed; top: 18px; right: 18px; bottom: 18px; width: min(452px, calc(100vw - 36px)); display: grid; grid-template-rows: auto 1fr auto;
+    background: var(--sheet-pieno); border: 1px solid var(--rule); border-radius: 3px; box-shadow: 0 30px 60px -30px rgba(0,0,0,.7);
+    opacity: 0; visibility: hidden; transform: translateX(10px); transition: opacity .22s ease-out, transform .22s ease-out, visibility 0s .22s; }
+  body.abaco #abaco { opacity: 1; visibility: visible; transform: none; transition: opacity .22s ease-out, transform .22s ease-out; }
+  #abaco header .riga { display: flex; justify-content: space-between; padding: 9px 16px 8px; border-bottom: 1px solid var(--rule);
+    font: 11px var(--tech); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  #abaco h2 { margin: 0; padding: 14px 16px 12px; font: 600 26px/1.05 var(--tech); font-stretch: 87.5%; }
+  #abaco h2 small { display: block; margin-top: 5px; font: 400 13px var(--text); color: var(--dim); }
+  #abaco .cifre { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  #abaco .cifre div { padding: 8px 16px 9px; }
+  #abaco .cifre div + div { border-left: 1px solid var(--rule); }
+  #abaco .cifre b { display: block; font: 600 22px/1 var(--tech); font-variant-numeric: tabular-nums; }
+  #abaco .cifre b.oro { color: var(--oak); }
+  #abaco .cifre span { font: 11px var(--tech); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  #elenco { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; padding-bottom: 10px; }
+  .gruppo-testa { display: flex; align-items: center; gap: 10px; padding: 16px 16px 7px; font: 11.5px var(--tech); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .gruppo-testa::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .gruppo-testa i { font-style: normal; color: var(--dim); }
+  .elemento { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 46px 1fr auto; column-gap: 12px; width: 100%; padding: 9px 16px 9px 14px;
+    border-left: 2px solid transparent; cursor: default; }
+  .elemento + .elemento { border-top: 1px solid rgba(238,232,220,.06); }
+  .elemento.scelto { background: var(--oak-wash); border-left-color: var(--oak); }
+  .elemento:focus-visible { outline: 1px solid var(--oak); outline-offset: -1px; }
+  .elemento .num { align-self: start; height: 24px; display: grid; place-items: center; border: 1px solid var(--oak-rule); border-radius: 2px;
+    font: 600 14px var(--tech); color: var(--oak); font-variant-numeric: tabular-nums; }
+  .elemento .nome { font-size: 14px; font-weight: 600; }
+  .elemento .nome em { font: 400 13px var(--tech); font-style: normal; color: var(--dim); margin-left: 6px; white-space: nowrap; }
+  .elemento .ruolo { font-size: 12.5px; color: var(--dim); }
+  .elemento .dove { text-align: right; font: 11px/1.5 var(--tech); font-stretch: 87.5%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+  .segno { display: inline-block; width: 7px; height: 7px; margin-left: 7px; transform: rotate(45deg) translateY(-1px); vertical-align: middle; }
+  .segno.vista { border: 1px solid var(--oak); }
+  .segno.vista.trovato { background: var(--oak); }
+  .segno.nascosto { width: 9px; height: 1px; transform: none; background: var(--faint); }
+  .elemento .apri { grid-column: 2 / 4; display: none; }
+  .elemento.scelto .apri { display: block; }
+  .elemento .dati { margin-top: 9px; padding-top: 8px; }
+  #abaco footer { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px 11px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--dim); }
+  #abaco footer span { display: inline-flex; align-items: center; gap: 5px; }
+  #abaco footer .legenda { margin-left: auto; color: var(--faint); }
+
+  @media (prefers-reduced-motion: reduce) { #mirino, #cornice, #scheda, #richiamo, #abaco, #velo { transition: none !important; } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="titolo">
+  <div class="riga"><span class="rif tech">Proposta audio-video</span><span class="rif tech">Tav. 01</span></div>
+  <div class="riga"><h1>Sala CdA</h1></div>
+  <div class="riga stato"><span>Scoperti <b id="visti">0/6</b></span><span><kbd>I</kbd>inventario</span></div>
+</div>
+
+<div id="mirino"></div>
+<div id="cornice"><i></i><i></i><i></i><i></i></div>
+<svg id="richiamo" aria-hidden="true"><path id="r-linea" d=""/><circle id="r-punto" r="2.5" cx="0" cy="0"/></svg>
+<aside id="scheda" aria-live="polite">
+  <div class="intestazione"><span class="voce">Voce<b id="s-voce"></b></span><span class="pezzi" id="s-pezzi"></span><span class="gruppo" id="s-gruppo"></span></div>
+  <div class="corpo">
+    <h2 id="s-modello"></h2>
+    <p class="ruolo" id="s-ruolo"></p>
+    <dl class="dati" id="s-dati"></dl>
+    <p class="nota" id="s-nota"></p>
+  </div>
+</aside>
+
+<div id="velo"></div>
+<section id="abaco" role="dialog" aria-label="Apparecchiature della sala CdA">
+  <header>
+    <div class="riga"><span>Proposta audio-video</span><span>Abaco apparecchiature</span></div>
+    <h2>Sala CdA<small>Tutto quello che è in offerta per questa sala, anche ciò che non si vede.</small></h2>
+    <div class="cifre">
+      <div><b id="a-voci">0</b><span>Voci</span></div>
+      <div><b id="a-vista">0</b><span>In vista</span></div>
+      <div><b class="oro" id="a-trovati">0</b><span>Scoperti</span></div>
+    </div>
+  </header>
+  <div id="elenco"></div>
+  <footer>
+    <span><kbd>I</kbd>chiudi</span><span><kbd>↑</kbd><kbd>↓</kbd>scorri</span>
+    <span class="legenda"><i class="segno vista trovato"></i>scoperto <i class="segno vista"></i>da trovare <i class="segno nascosto"></i>non in vista</span>
+  </footer>
+</section>
+
+<button id="ingresso" hidden>
+  <div class="testa">
+    <div class="rif">Proposta audio-video · Ambiente di progetto</div>
+    <strong>Sala CdA <span>Clicca per entrare</span></strong>
+  </div>
+  <ul>
+    <li><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>cammina, <kbd>Shift</kbd> per andare più veloce</span></li>
+    <li><span><kbd>Mouse</kbd></span><span>guarda; punta un apparecchio per vedere cos’è</span></li>
+    <li><span><kbd>I</kbd></span><span>inventario della sala, anche quello che non si vede</span></li>
+    <li><span><kbd>Esc</kbd></span><span>libera il mouse</span></li>
+  </ul>
+</button>
+<div id="carica"><div>Preparazione della sala</div><div id="barra"><i></i></div></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
