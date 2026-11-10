@@ -1,0 +1,17 @@
+{
+ "stanza": "corridoio",
+ "ris": 2048,
+ "campioni": 256,
+ "zona": [
+  -0.1,
+  29.27,
+  7.18,
+  10.3
+ ],
+ "mappe": {
+  "BAKE_statico": "lm_statico.exr",
+  "BAKE_sedie": null
+ },
+ "prodotti": {},
+ "ante": []
+}

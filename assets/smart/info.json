@@ -1,0 +1,20 @@
+{
+ "stanza": "smart",
+ "ris": 2048,
+ "campioni": 256,
+ "zona": [
+  -11.2,
+  1.7,
+  -1.2,
+  13.45
+ ],
+ "mappe": {
+  "BAKE_statico": "lm_statico.exr",
+  "BAKE_sedie": null
+ },
+ "prodotti": {},
+ "ante": [
+  "Anta01",
+  "Anta02"
+ ]
+}

@@ -2,8 +2,8 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sala CdA</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Sede</title>
 <style>
   /* Linguaggio: tavola tecnica d'architetto. Bahnschrift (DIN 1451, installato su Windows 10/11) per numeri ed etichette,
      Segoe UI per il testo; fondo scuro quasi pieno, linee sottili, un solo accento color rovere come le lamelle della sala. */
@@ -87,6 +87,17 @@
   .dati dt { font: 11px/1.7 var(--tech); font-stretch: 87.5%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
   .dati dd { margin: 0; }
   .nota { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink); opacity: .88; }
+  .usa { display: flex; align-items: center; gap: 8px; margin: 11px 0 0; padding-top: 10px; border-top: 1px dashed var(--rule); font-size: 13px; color: var(--oak); }
+  .usa kbd { color: var(--oak); border-color: var(--oak-rule); }
+  #titolo .azioni { flex-direction: column; align-items: flex-start; gap: 5px; color: var(--ink); }
+  #titolo .azioni span { display: flex; align-items: center; }
+  #invito { position: fixed; left: 50%; top: calc(50% + 26px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; pointer-events: none;
+    padding: 6px 11px 6px 8px; background: var(--sheet); border: 1px solid var(--oak-rule); border-radius: 3px; font-size: 13px; color: var(--ink); white-space: nowrap; }
+  #invito kbd { color: var(--oak); border-color: var(--oak-rule); }
+  body:not(.dentro) #invito, body.abaco #invito { visibility: hidden; }
+  #carico { font: 11px var(--tech); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  #a-vuoto { margin: 0; padding: 22px 16px; font-size: 13.5px; color: var(--dim); align-self: start; }
+  #abaco:has(#a-vuoto:not([hidden])) #elenco { display: none; }
   body:not(.dentro) #mirino, body:not(.dentro) #cornice, body:not(.dentro) #scheda, body:not(.dentro) #richiamo,
   body.abaco #mirino, body.abaco #cornice, body.abaco #scheda, body.abaco #richiamo { visibility: hidden; }
 
@@ -134,6 +145,59 @@
   #abaco footer span { display: inline-flex; align-items: center; gap: 5px; }
   #abaco footer .legenda { margin-left: auto; color: var(--faint); }
 
+  /* --- smartphone e tablet (body.tocco, messo da main.js) ---------------------------------------------
+     Leva a sinistra dove si appoggia il pollice, pulsanti a destra, scheda ancorata in alto a destra invece che accanto all'oggetto.
+     Le misure tengono conto di tacca e bordi arrotondati (safe-area). */
+  body:not(.tocco) .solo-tocco, body.tocco .solo-mouse { display: none !important; }
+  body.tocco, body.tocco canvas { touch-action: none; }
+  body.tocco { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
+    --sx: max(12px, env(safe-area-inset-left)); --dx: max(12px, env(safe-area-inset-right)); --giu: max(12px, env(safe-area-inset-bottom)); }
+  #leva { position: fixed; width: 108px; height: 108px; margin: -54px 0 0 -54px; border-radius: 50%; pointer-events: none;
+    border: 1px solid rgba(238,232,220,.34); background: rgba(17,16,14,.28); }
+  #leva i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
+    background: rgba(238,232,220,.82); box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+  #tocchi-su, #t-azioni { position: fixed; display: none; gap: 8px; }
+  body.tocco.dentro:not(.abaco) #tocchi-su, body.tocco.dentro:not(.abaco) #t-azioni { display: flex; }
+  #tocchi-su { top: 12px; right: var(--dx); }
+  #t-azioni { bottom: var(--giu); right: var(--dx); flex-direction: column; align-items: flex-end; }
+  #tocchi-su button, #t-azioni button, #a-chiudi { all: unset; box-sizing: border-box; min-height: 40px; padding: 0 14px; display: inline-flex; align-items: center;
+    background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; font: 500 14px var(--tech); letter-spacing: .04em; color: var(--ink); }
+  #t-azioni button { min-height: 46px; padding: 0 16px; border-color: var(--oak-rule); color: var(--oak); }
+  #tocchi-su button:active, #t-azioni button:active, #a-chiudi:active { background: var(--oak-wash); border-color: var(--oak); }
+  #t-guida { min-width: 40px; justify-content: center; }
+  body.tocco #titolo { left: var(--sx); top: 12px; min-width: 0; }
+  body.tocco #titolo .riga { padding: 5px 10px; }
+  body.tocco #titolo h1 { font-size: 17px; }
+  body.tocco #titolo .azioni, body.tocco #titolo .stato kbd, body.tocco #titolo .inv { display: none; }
+  body.tocco #richiamo { display: none; }
+  body.tocco #scheda { left: auto !important; right: var(--dx); top: 62px !important; width: min(300px, 46vw); max-height: calc(100dvh - 62px - 124px); overflow: hidden; transform: none; }
+  body.tocco #scheda .corpo { padding: 9px 12px 11px; }
+  body.tocco #scheda h2 { font-size: 16px; }
+  body.tocco #scheda .usa { display: none; }
+  body.tocco #invito { top: calc(50% + 30px); padding: 8px 12px 8px 9px; }
+  @media (max-height: 480px) {                           /* telefono in orizzontale: la scheda dice cos'e', i dati stanno nell'inventario */
+    body.tocco #scheda .dati { display: none; }
+    body.tocco #scheda .nota { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; margin-top: 7px; }
+    body.tocco #titolo .rif { display: none; }
+    body.tocco #ingresso .testa { padding: 12px 16px 10px; }
+    body.tocco #ingresso ul { padding: 8px 16px 12px; gap: 6px 12px; font-size: 13px; }
+  }
+  body.tocco #abaco { top: 8px; bottom: max(8px, env(safe-area-inset-bottom)); right: var(--dx); width: min(520px, calc(100vw - var(--sx) - var(--dx))); }
+  body.tocco #abaco h2 { padding: 10px 16px 9px; font-size: 21px; }
+  body.tocco #abaco h2 small { display: none; }
+  body.tocco #abaco footer > span:not(.legenda) { display: none; }
+  body.tocco #abaco footer .legenda { margin-left: 0; }
+  body.tocco #abaco header .riga { align-items: center; padding: 6px 8px 6px 16px; }
+  body.tocco #elenco { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+  body.tocco .elemento { padding-top: 11px; padding-bottom: 11px; }
+  #a-chiudi { min-height: 34px; text-transform: none; }
+  body.tocco #ingresso { max-height: calc(100dvh - 16px); overflow: hidden; }
+  #ruota { position: fixed; inset: 0; display: none; place-content: center; justify-items: center; gap: 14px; padding: 24px; text-align: center; background: #14130f;
+    font: 15px/1.4 var(--text); color: var(--dim); }
+  #ruota b { font: 600 22px/1.1 var(--tech); color: var(--ink); }
+  #ruota i { width: 54px; height: 30px; border: 1.5px solid var(--oak); border-radius: 5px; }
+  @media (orientation: portrait) and (max-width: 640px) { body.tocco #ruota { display: grid; } }
+
   @media (prefers-reduced-motion: reduce) { #mirino, #cornice, #scheda, #richiamo, #abaco, #velo { transition: none !important; } }
 </style>
 <script type="importmap">
@@ -142,12 +206,18 @@
 </head>
 <body>
 <div id="titolo">
-  <div class="riga"><span class="rif tech">Proposta audio-video</span><span class="rif tech">Tav. 01</span></div>
-  <div class="riga"><h1>Sala CdA</h1></div>
-  <div class="riga stato"><span>Scoperti <b id="visti">0/6</b></span><span><kbd>I</kbd>inventario</span></div>
+  <div class="riga"><span class="rif tech">Proposta audio-video</span><span class="rif tech" id="tav">Tav. 01</span></div>
+  <div class="riga"><h1 id="nome-zona">Sala CdA</h1></div>
+  <div class="riga stato"><span>Scoperti <b id="visti">0/6</b></span><span class="inv"><kbd>I</kbd>inventario</span></div>
+  <div class="riga stato azioni" id="azioni" hidden></div>
+  <div class="riga stato" id="carico" hidden></div>
 </div>
 
+<div id="leva" hidden><i></i></div>
+<div id="tocchi-su"><button type="button" id="t-inventario">Inventario</button><button type="button" id="t-guida" aria-label="Guida ai comandi">?</button></div>
+<div id="t-azioni"></div>
 <div id="mirino"></div>
+<div id="invito" hidden><kbd>E</kbd><span id="invito-testo"></span></div>
 <div id="cornice"><i></i><i></i><i></i><i></i></div>
 <svg id="richiamo" aria-hidden="true"><path id="r-linea" d=""/><circle id="r-punto" r="2.5" cx="0" cy="0"/></svg>
 <aside id="scheda" aria-live="polite">
@@ -157,14 +227,15 @@
     <p class="ruolo" id="s-ruolo"></p>
     <dl class="dati" id="s-dati"></dl>
     <p class="nota" id="s-nota"></p>
+    <p class="usa" id="s-usa" hidden><kbd>E</kbd><span id="s-usa-testo"></span></p>
   </div>
 </aside>
 
 <div id="velo"></div>
-<section id="abaco" role="dialog" aria-label="Apparecchiature della sala CdA">
+<section id="abaco" role="dialog" aria-label="Apparecchiature dell’ambiente">
   <header>
-    <div class="riga"><span>Proposta audio-video</span><span>Abaco apparecchiature</span></div>
-    <h2>Sala CdA<small>Tutto quello che è in offerta per questa sala, anche ciò che non si vede.</small></h2>
+    <div class="riga"><span>Proposta audio-video</span><span class="solo-mouse">Abaco apparecchiature</span><button type="button" id="a-chiudi" class="solo-tocco">Chiudi</button></div>
+    <h2><span id="a-nome">Sala CdA</span><small>Tutto quello che è in offerta per questo ambiente, anche ciò che non si vede.</small></h2>
     <div class="cifre">
       <div><b id="a-voci">0</b><span>Voci</span></div>
       <div><b id="a-vista">0</b><span>In vista</span></div>
@@ -172,6 +243,7 @@
     </div>
   </header>
   <div id="elenco"></div>
+  <p id="a-vuoto" hidden>In questo ambiente non ci sono apparecchiature in offerta.</p>
   <footer>
     <span><kbd>I</kbd>chiudi</span><span><kbd>↑</kbd><kbd>↓</kbd>scorri</span>
     <span class="legenda"><i class="segno vista trovato"></i>scoperto <i class="segno vista"></i>da trovare <i class="segno nascosto"></i>non in vista</span>
@@ -180,17 +252,29 @@
 
 <button id="ingresso" hidden>
   <div class="testa">
-    <div class="rif">Proposta audio-video · Ambiente di progetto</div>
-    <strong>Sala CdA <span>Clicca per entrare</span></strong>
+    <div class="rif">Proposta audio-video · Ambienti di progetto</div>
+    <strong>Visita della sede <span class="solo-mouse">Clicca per entrare</span><span class="solo-tocco">Tocca per entrare</span></strong>
   </div>
-  <ul>
+  <ul class="solo-tocco">
+    <li><span><kbd>Sinistra</kbd></span><span>appoggia il pollice e trascina per camminare</span></li>
+    <li><span><kbd>Destra</kbd></span><span>trascina per guardarti intorno</span></li>
+    <li><span><kbd>Tocco</kbd></span><span>punta un apparecchio col mirino per vedere cos’è; un tocco lo usa</span></li>
+    <li><span><kbd>Pulsanti</kbd></span><span>in basso a destra: monitor, schermo e proiettore dell’ambiente</span></li>
+    <li><span><kbd>Inventario</kbd></span><span>tutto quello che c’è nell’ambiente, anche ciò che non si vede</span></li>
+    <li><span><kbd>Porte</kbd></span><span>si aprono da sole quando ti avvicini</span></li>
+  </ul>
+  <ul class="solo-mouse">
     <li><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>cammina, <kbd>Shift</kbd> per andare più veloce</span></li>
     <li><span><kbd>Mouse</kbd></span><span>guarda; punta un apparecchio per vedere cos’è</span></li>
-    <li><span><kbd>I</kbd></span><span>inventario della sala, anche quello che non si vede</span></li>
+    <li><span><kbd>E</kbd></span><span>usa quello che punti: schermi, proiettore, touch panel</span></li>
+    <li><span><kbd>M</kbd><kbd>P</kbd></span><span>in sala CdA <kbd>M</kbd> alza i monitor dal tavolo; <kbd>P</kbd> accende e spegne lo schermo o il proiettore</span></li>
+    <li><span><kbd>I</kbd></span><span>inventario dell’ambiente, anche quello che non si vede</span></li>
+    <li><span><kbd>Porte</kbd></span><span>si aprono da sole quando ti avvicini</span></li>
     <li><span><kbd>Esc</kbd></span><span>libera il mouse</span></li>
   </ul>
 </button>
-<div id="carica"><div>Preparazione della sala</div><div id="barra"><i></i></div></div>
+<div id="ruota"><i></i><b>Ruota il telefono</b><span>La visita si fa in orizzontale.</span></div>
+<div id="carica"><div>Preparazione della sede</div><div id="barra"><i></i></div></div>
 <script type="module" src="./main.js"></script>
 </body>
 </html>

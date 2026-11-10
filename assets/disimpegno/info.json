@@ -1,0 +1,34 @@
+{
+ "stanza": "disimpegno",
+ "ris": 1024,
+ "campioni": 256,
+ "zona": [
+  63.37,
+  67.91,
+  -0.56,
+  10.3
+ ],
+ "mappe": {
+  "BAKE_statico": "lm_statico.exr",
+  "BAKE_sedie": null
+ },
+ "prodotti": {
+  "Armadio rack Link 22U": [
+   [
+    63.95,
+    9.231,
+    0.0,
+    64.55,
+    9.85,
+    1.166
+   ]
+  ]
+ },
+ "ante": [
+  "Anta10",
+  "Anta11",
+  "Anta12",
+  "Anta13",
+  "Anta14"
+ ]
+}

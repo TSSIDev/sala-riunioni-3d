@@ -1,0 +1,17 @@
+{
+ "stanza": "relax",
+ "ris": 4096,
+ "campioni": 256,
+ "zona": [
+  29.27,
+  48.2,
+  -0.56,
+  10.3
+ ],
+ "mappe": {
+  "BAKE_statico": "lm_statico.exr",
+  "BAKE_sedie": "lm_sedie.exr"
+ },
+ "prodotti": {},
+ "ante": []
+}
