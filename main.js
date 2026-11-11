@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { LUTPass } from 'three/addons/postprocessing/LUTPass.js';
+import { LUTCubeLoader } from 'three/addons/loaders/LUTCubeLoader.js';
 import { PRODOTTI, GRUPPI } from './prodotti.js';
 import { creaMondo } from './mondo.js';
 
@@ -14,6 +17,7 @@ import { creaMondo } from './mondo.js';
 // Blender (x, y, z) diventa Three.js (x, z, -y).
 const v = (x, y, z) => new THREE.Vector3(x, z, -y);
 const DRACO = new URL(import.meta.resolve('three/addons/libs/draco/gltf/')).href;
+const BASIS = new URL(import.meta.resolve('three/addons/libs/basis/')).href;
 
 // Smartphone e tablet: comandi a tocco, asset leggeri (file con suffisso _m, se ci sono) e meno pixel. ?tocco nell'indirizzo la forza anche col mouse.
 const TOCCO = new URLSearchParams(location.search).has('tocco') || matchMedia('(pointer: coarse)').matches;
@@ -24,7 +28,12 @@ const BOB_SU = .016, BOB_LATO = .009;
 
 const mappa = await (await fetch('./mappa.json')).json();
 const mondo = creaMondo(mappa, RAGGIO);
-const ZONE = mappa.zone.map((z, i) => ({ ...z, i, stato: 'manca', info: null }));
+const ZONE = mappa.zone.map((z, i) => ({ ...z, i, stato: 'manca', info: null, interni: [], bersagli: [], visto: -1e9, interniSu: true }));
+// sedie e piante di ogni zona: cinque punti ciascuna, per capire se da dove ci si trova se ne vede almeno una
+for (const [x, y] of [...mappa.sedie, ...mappa.piante]) {
+  const z = ZONE[mondo.zonaDi(x, y)];
+  if (z) for (const [dx, dy] of [[0, 0], [.28, 0], [-.28, 0], [0, .28], [0, -.28]]) z.bersagli.push(x + dx, y + dy);
+}
 await Promise.all(ZONE.map(async (z) => {
   try { const r = await fetch(`./assets/${z.id}/info.json`); if (r.ok) { z.info = await r.json(); z.stato = 'attesa'; } } catch { /* zona senza bake */ }
 }));
@@ -47,12 +56,24 @@ composer.setSize(innerWidth, innerHeight);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .12, .5, 11.));  // solo i LED (emissione 14): non il cielo ne' le pareti al sole
 composer.addPass(new OutputPass());
+// aspetto del render di Blender: three.js ha AgX di base, la tabella look.cube (genera_lut.py) aggiunge contrasto ed esposizione del render.
+// Si applica all'immagine gia' pronta per lo schermo. Tasto L per confrontare con e senza; se il file manca si resta su AgX di base.
+const look = new LUTPass({ intensity: 1 });
+look.enabled = false;
+composer.addPass(look);
+new LUTCubeLoader().loadAsync('./look.cube').then((t) => { look.lut = t.texture3D; look.enabled = true; }, () => console.warn('look.cube non trovato: resta AgX di base'));
+addEventListener('keydown', (e) => { if (e.code === 'KeyL' && !e.repeat && !e.ctrlKey && !e.metaKey && look.lut) look.enabled = !look.enabled; });
+// texture nitide anche viste di taglio (pavimento, piani dei tavoli): filtro anisotropico al massimo della scheda, piu' basso sui telefoni
+const ANISO = Math.min(renderer.capabilities.getMaxAnisotropy(), TOCCO ? 4 : 16);
+function nitida(m) { for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']) if (m[k]) m[k].anisotropy = ANISO; }
 
 const $ = (id) => document.getElementById(id);
 const barra = document.querySelector('#barra i');
 const manager = new THREE.LoadingManager();
 manager.onProgress = (_, n, tot) => { barra.style.width = `${(n / tot) * 100}%`; };
-const caricatori = (m) => ({ gltf: new GLTFLoader(m).setDRACOLoader(new DRACOLoader(m).setDecoderPath(DRACO)), exr: new EXRLoader(m).setDataType(THREE.HalfFloatType) });
+// texture KTX2 (se gli asset sono stati preparati cosi'): restano compresse anche nella scheda video, circa un quinto della memoria. Gli asset WebP si caricano come prima
+const ktx2 = new KTX2Loader().setTranscoderPath(BASIS).detectSupport(renderer);
+const caricatori = (m) => ({ gltf: new GLTFLoader(m).setDRACOLoader(new DRACOLoader(m).setDecoderPath(DRACO)).setKTX2Loader(ktx2), exr: new EXRLoader(m).setDataType(THREE.HalfFloatType) });
 const primi = caricatori(manager), dopo = caricatori(undefined);
 
 // sui telefoni si prova prima il file leggero (<nome>_m.<est>); se manca si prende quello pieno
@@ -63,7 +84,7 @@ async function leggi(caricatore, base, nome, est) {
 function mappaLuce(tex) {
   tex.channel = 1; tex.flipY = true; tex.colorSpace = THREE.NoColorSpace;
   tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
-  tex.anisotropy = 4; tex.needsUpdate = true;
+  tex.anisotropy = Math.min(ANISO, 8); tex.needsUpdate = true;
   return tex;
 }
 function gruppoBake(o) {
@@ -109,9 +130,11 @@ async function caricaZona(z, c) {
   modello.scene.traverse((o) => {
     const anta = /^(?:BAKE_statico_)?(Anta\d\d)$/.exec(o.name);
     if (anta) nodiAnte.set(anta[1], { o, base: o.quaternion.clone() });
+    if (/^BAKE_sedie|^Pianta/.test(o.name)) z.interni.push(o);
     if (/^Opzione_3_-_Monitor/.test(o.name)) monitor.push({ o, y: o.position.y, q: o.quaternion.clone(), schermi: null });
     if (/^Opzione_3_-_Cornice/.test(o.name)) { cornici.push(o); o.visible = stato.monitorVisti; }
     if (!o.isMesh) return;
+    nitida(o.material);
     const g = gruppoBake(o);
     if (g && o.material.transmission > 0) {
       o.material = vetroSemplice(o.material); o.renderOrder = 3;
@@ -158,6 +181,26 @@ async function caricaZona(z, c) {
     }
   }
   z.stato = 'pronta'; mondo.pronte.add(z.i); mondo.aggiornaApribili();
+}
+
+// --- vista: sedie e piante sono quasi tutti i triangoli della scena. Si disegnano solo quelle delle zone che da qui si possono vedere:
+// muri ciechi e porte in legno chiuse nascondono, le vetrate no. Pareti, arredi e prodotti restano sempre (niente buchi attorno alle porte).
+const INTORNO = [[0, 0], [.3, 0], [-.3, 0], [0, .3], [0, -.3]];
+let vistaT = -1;
+function aggiornaVista(t) {
+  if (t - vistaT < .2) return;
+  vistaT = t;
+  for (const z of ZONE) {
+    if (z.stato !== 'pronta' || !z.interni.length) continue;
+    let si = !mondo.conVista || z === zonaOra || !z.bersagli.length;   // mappa senza muri ciechi (file vecchio): si disegna tutto
+    for (let k = 0; !si && k < INTORNO.length; k++) {
+      const px = io.x + INTORNO[k][0], py = io.y + INTORNO[k][1], b = z.bersagli;
+      for (let i = 0; i < b.length; i += 2) if (mondo.vede(px, py, b[i], b[i + 1])) { si = true; break; }
+    }
+    if (si) z.visto = t;
+    const su = t - z.visto < .6;                           // resta acceso un attimo dopo l'ultima volta che si e' visto
+    if (su !== z.interniSu) { z.interniSu = su; for (const o of z.interni) o.visible = su; }
+  }
 }
 
 // --- riflessi: una ripresa a 360 gradi dal punto in cui ci si trova, gia' illuminata dal bake -----------------
@@ -336,7 +379,8 @@ function aggiorna(dt, t) {
   });
 
   const z = ZONE[mondo.zonaDi(io.x, io.y)] ?? null;
-  if (z !== zonaOra) { zonaOra = z; cambiaZona(); if (z?.stato === 'pronta') riprendi(io.x, io.y); }
+  if (z !== zonaOra) { zonaOra = z; vistaT = -1; aggiornaVista(t); cambiaZona(); if (z?.stato === 'pronta') riprendi(io.x, io.y); }
+  aggiornaVista(t);
 }
 
 // --- offerta interattiva: il mirino riconosce i prodotti, il tasto I apre l'abaco dell'ambiente ---------------

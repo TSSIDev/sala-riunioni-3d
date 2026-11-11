@@ -61,6 +61,21 @@ export function creaMondo(mappa, raggio = .32) {
     p.x = x; p.y = y; return true;
   }
 
+  // vista: da un punto a un altro si vede se in mezzo non ci sono muri ciechi ne' porte in legno chiuse (le vetrate non nascondono)
+  const ciechi = (mappa.ciechi ?? []).map(([ax, ay, bx, by]) => ({ ax, ay, bx, by }));
+  for (const a of ante) a.chiusa = { ax: a.x - a.ux * .08, ay: a.y - a.uy * .08, bx: a.x + a.ux * (a.w + .08), by: a.y + a.uy * (a.w + .08) };
+  const incrocia = (px, py, qx, qy, s) => {
+    const rx = qx - px, ry = qy - py, sx = s.bx - s.ax, sy = s.by - s.ay, d = rx * sy - ry * sx;
+    if (Math.abs(d) < 1e-9) return false;
+    const t = ((s.ax - px) * sy - (s.ay - py) * sx) / d, u = ((s.ax - px) * ry - (s.ay - py) * rx) / d;
+    return t > 0 && t < 1 && u >= 0 && u <= 1;
+  };
+  function vede(px, py, qx, qy) {
+    for (const s of ciechi) if (incrocia(px, py, qx, qy, s)) return false;
+    for (const a of ante) if (a.tipo !== 'vetro' && !(a.f > .03) && incrocia(px, py, qx, qy, a.chiusa)) return false;
+    return true;
+  }
+
   const APRE = 1.7, CHIUDE = 2.5, GIRO = 1.45;            // metri dal centro dell'anta; angolo di apertura in radianti
   function aggiornaAnte(dt, px, py) {
     for (const a of ante) {
@@ -76,5 +91,5 @@ export function creaMondo(mappa, raggio = .32) {
       a.angolo = a.verso * GIRO * a.f * a.f * (3 - 2 * a.f);   // partenza e arrivo morbidi
     }
   }
-  return { solidi, zone, pronte, zonaDi, ante, aggiornaApribili, muovi, aggiornaAnte, ammesso };
+  return { solidi, zone, pronte, zonaDi, ante, aggiornaApribili, muovi, aggiornaAnte, ammesso, vede, conVista: ciechi.length > 0 };
 }
