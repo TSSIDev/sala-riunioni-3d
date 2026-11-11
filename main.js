@@ -6,9 +6,9 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { LUTPass } from 'three/addons/postprocessing/LUTPass.js';
-import { LUTCubeLoader } from 'three/addons/loaders/LUTCubeLoader.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { PRODOTTI, GRUPPI } from './prodotti.js';
 import { creaMondo } from './mondo.js';
 
@@ -41,8 +41,7 @@ await Promise.all(ZONE.map(async (z) => {
 const renderer = new THREE.WebGLRenderer({ powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, TOCCO ? 1.5 : 1.75));
 renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.AgXToneMapping;
-renderer.toneMappingExposure = 1.;
+renderer.toneMapping = THREE.NoToneMapping;           // tonemapper e colore li fa il passaggio "colore" in fondo (look.lut)
 renderer.localClippingEnabled = true;                   // i monitor a scomparsa spariscono sotto il piano del tavolo
 document.body.prepend(renderer.domElement);
 
@@ -55,14 +54,34 @@ composer.setPixelRatio(renderer.getPixelRatio());
 composer.setSize(innerWidth, innerHeight);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .12, .5, 11.));  // solo i LED (emissione 14): non il cielo ne' le pareti al sole
-composer.addPass(new OutputPass());
-// aspetto del render di Blender: three.js ha AgX di base, la tabella look.cube (genera_lut.py) aggiunge contrasto ed esposizione del render.
-// Si applica all'immagine gia' pronta per lo schermo. Tasto L per confrontare con e senza; se il file manca si resta su AgX di base.
-const look = new LUTPass({ intensity: 1 });
-look.enabled = false;
-composer.addPass(look);
-new LUTCubeLoader().loadAsync('./look.cube').then((t) => { look.lut = t.texture3D; look.enabled = true; }, () => console.warn('look.cube non trovato: resta AgX di base'));
-addEventListener('keydown', (e) => { if (e.code === 'KeyL' && !e.repeat && !e.ctrlKey && !e.metaKey && look.lut) look.enabled = !look.enabled; });
+// vista come nei render di Blender: look.lut (genera_lut.py) e' la trasformazione OCIO di Blender, AgX + Medium High Contrast
+// + esposizione 0.15, campionata in scala logaritmica. Si applica alla luce lineare HDR, prima di qualsiasi quantizzazione:
+// niente AgX di base di three.js (piatto) ne' correzioni sopra l'immagine gia' a 8 bit. Il dither toglie le bande sulle pareti.
+const EV0 = -10, EV1 = 10;                               // stessi valori di genera_lut.py
+const colore = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, lut: { value: null }, esposizione: { value: 1 } },   // esposizione: manopola per tarare a occhio
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+  fragmentShader: `precision highp sampler3D;
+    uniform sampler2D tDiffuse; uniform sampler3D lut; uniform float esposizione; varying vec2 vUv;
+    void main() {
+      vec3 c = max(texture2D(tDiffuse, vUv).rgb * esposizione, vec3(1e-10));
+      vec3 t = clamp((log2(c / .18) - float(${EV0})) / float(${EV1 - EV0}), 0., 1.);
+      float n = float(textureSize(lut, 0).x);
+      vec3 o = texture(lut, t * ((n - 1.) / n) + .5 / n).rgb;
+      o += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - .5) / 255.;
+      gl_FragColor = vec4(o, 1.);
+    }`,
+});
+composer.addPass(colore);
+{
+  const r = await fetch('./look.lut');
+  if (!r.ok) throw new Error('manca look.lut: lanciare genera_lut.py');
+  const dati = new Uint16Array(await r.arrayBuffer()), n = Math.round(Math.cbrt(dati.length / 4));
+  const t = new THREE.Data3DTexture(dati, n, n, n);
+  t.type = THREE.HalfFloatType; t.format = THREE.RGBAFormat; t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true;
+  colore.uniforms.lut.value = t;
+}
 // texture nitide anche viste di taglio (pavimento, piani dei tavoli): filtro anisotropico al massimo della scheda, piu' basso sui telefoni
 const ANISO = Math.min(renderer.capabilities.getMaxAnisotropy(), TOCCO ? 4 : 16);
 function nitida(m) { for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']) if (m[k]) m[k].anisotropy = ANISO; }
@@ -73,17 +92,56 @@ const manager = new THREE.LoadingManager();
 manager.onProgress = (_, n, tot) => { barra.style.width = `${(n / tot) * 100}%`; };
 // texture KTX2 (se gli asset sono stati preparati cosi'): restano compresse anche nella scheda video, circa un quinto della memoria. Gli asset WebP si caricano come prima
 const ktx2 = new KTX2Loader().setTranscoderPath(BASIS).detectSupport(renderer);
-const caricatori = (m) => ({ gltf: new GLTFLoader(m).setDRACOLoader(new DRACOLoader(m).setDecoderPath(DRACO)).setKTX2Loader(ktx2), exr: new EXRLoader(m).setDataType(THREE.HalfFloatType) });
+{ // three.js da' per scontato l'ASTC HDR appena c'e' l'estensione ASTC, ma molti iPhone hanno solo il profilo "ldr": le mappe
+  // HDR verrebbero nere. Si guarda il profilo vero; senza HDR il transcoder ripiega su half float (o sulle mappe RGBM, vedi sotto)
+  const astc = renderer.getContext().getExtension('WEBGL_compressed_texture_astc');
+  if (astc && !astc.getSupportedProfiles?.().includes('hdr')) ktx2.workerConfig.astcHDRSupported = false;
+}
+// Texture condivise tra le zone (texture_condivise.mjs): intonaco, rovere, gres... sono gli stessi file in assets/comune/.
+// Un plugin del GLTFLoader, messo davanti a quelli di serie, restituisce a ogni zona la stessa texture: si scarica,
+// si decodifica e sta nella scheda video una volta sola (175 texture nelle 9 zone, 38 diverse). Qualita' identica.
+const texCondivise = new Map();
+class TextureCondivise {
+  constructor(parser) { this.parser = parser; this.name = 'texture_condivise'; }
+  loadTexture(i) {
+    const p = this.parser, j = p.json, def = j.textures[i];
+    const src = def.extensions?.KHR_texture_basisu?.source ?? def.source, uri = j.images?.[src]?.uri;
+    if (typeof uri !== 'string' || !uri.includes('comune/') || !uri.endsWith('.ktx2')) return null;   // il resto come di serie
+    const s = j.samplers?.[def.sampler] ?? {};
+    const chiave = `${uri.split('/').pop()}|${s.wrapS}|${s.wrapT}|${s.magFilter}|${s.minFilter}`;
+    if (!texCondivise.has(chiave)) texCondivise.set(chiave, p.loadTextureImage(i, src, p.options.ktx2Loader));
+    return texCondivise.get(chiave);
+  }
+}
+const caricatori = (m) => {
+  const gltf = new GLTFLoader(m).setDRACOLoader(new DRACOLoader(m).setDecoderPath(DRACO)).setKTX2Loader(ktx2);
+  gltf.pluginCallbacks.unshift((parser) => new TextureCondivise(parser));
+  return { gltf, exr: new EXRLoader(m).setDataType(THREE.HalfFloatType) };
+};
 const primi = caricatori(manager), dopo = caricatori(undefined);
 
-// sui telefoni si prova prima il file leggero (<nome>_m.<est>); se manca si prende quello pieno
-async function leggi(caricatore, base, nome, est) {
-  if (TOCCO) { try { return await caricatore.loadAsync(`${base}${nome}_m.${est}`); } catch { /* niente versione leggera */ } }
+// versione leggera (<nome>_m.<est>): sui telefoni sempre, sul desktop per la prima stanza (partenza progressiva); se manca, quella piena
+async function leggi(caricatore, base, nome, est, leggera = TOCCO) {
+  if (leggera) { try { return await caricatore.loadAsync(`${base}${nome}_m.${est}`); } catch { /* niente versione leggera */ } }
   return caricatore.loadAsync(`${base}${nome}.${est}`);
 }
+// Mappe di luce (demo_prepara.py): KTX2 compresso anche nella scheda video. Desktop: HDR (BC6H, 1 byte/pixel invece degli
+// 8 dell'EXR). Telefoni: _m a meta' risoluzione in RGBM (8 bit + moltiplicatore, compresso su qualsiasi GPU mobile).
+// Se manca il KTX2 (asset vecchi) si ripiega sull'EXR.
+async function leggiLuce(c, base, nome, leggera = TOCCO) {
+  const prova = leggera ? [[`${nome}_m.ktx2`, true], [`${nome}.ktx2`, false]] : [[`${nome}.ktx2`, false]];
+  for (const [file, rgbm] of prova) {
+    try { const t = await ktx2.loadAsync(base + file); t.userData.rgbm = rgbm; return t; } catch { /* prossimo formato */ }
+  }
+  return leggi(c.exr, base, nome, 'exr', leggera);
+}
 function mappaLuce(tex) {
-  tex.channel = 1; tex.flipY = true; tex.colorSpace = THREE.NoColorSpace;
-  tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.channel = 1; tex.colorSpace = THREE.NoColorSpace; tex.magFilter = THREE.LinearFilter;
+  if (tex.isCompressedTexture) {                       // KTX2: mipmap gia' nel file, righe gia' dal basso (non si capovolge)
+    tex.flipY = false; tex.generateMipmaps = false; tex.minFilter = tex.mipmaps?.length > 1 ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+  } else {
+    tex.flipY = true; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter;
+  }
   tex.anisotropy = Math.min(ANISO, 8); tex.needsUpdate = true;
   return tex;
 }
@@ -91,12 +149,18 @@ function gruppoBake(o) {
   for (let p = o; p; p = p.parent) {
     if (p.name.startsWith('BAKE_statico')) return 'statico';
     if (p.name.startsWith('BAKE_sedie')) return 'sedie';
+    if (p.name.startsWith('BAKE_esterno')) return 'esterno';   // facciate del piano terra e parapetto (scena_demo.py)
   }
   return null;
 }
 
 const cotti = [], liberi = [];
-const vetro = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .04, metalness: 0, transparent: true, opacity: .07, depthWrite: false });
+// Vetro delle finestre come un vetro vero: quello che c'e' dietro si moltiplica per la trasmissione della lastra e sopra si
+// somma solo il riflesso (Fresnel, dall'envMap). In Blender il Vetro ha tinta (.95,.98,.97): due facce, ~4% riflesso ciascuna
+// -> ~(.83,.88,.87). Il velo bianco di prima faceva l'opposto: schiariva e sbiadiva il fuori.
+const vetro = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: .04, metalness: 0, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.ConstantColorFactor });
+vetro.blendColor.setRGB(.83, .88, .87);
 const satinato = new THREE.MeshStandardMaterial({ color: 0xf2f6f6, roughness: .6, metalness: 0, transparent: true, opacity: .55, depthWrite: false });
 // vetri rimasti nei gruppi cotti (tavolo in vetro, sportello fume'): niente trasmissione, altrimenti three.js ridisegna
 // tutta la scena una seconda volta a ogni fotogramma. Un velo trasparente con la tinta del vetro, uno per materiale.
@@ -109,6 +173,71 @@ function vetroSemplice(m) {
   }
   return vetriCotti.get(m.name);
 }
+// fughe di piastrelle e pannelli (fughe.json, scritto da fughe_demo.py). In Blender sono un nodo Brick procedurale che il glTF
+// non porta, e con lui si perde anche la tinta (il gres usciva troppo chiaro). Si disegnano nello shader: nitide da vicino,
+// da lontano sfumano nel loro valore medio invece di sfarfallare.
+const FUGHE = await fetch('./fughe.json').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+const GLSL_FUGHE = /* glsl */`
+uniform vec3 fC1, fC2, fMalta; uniform vec4 fMisure;          // larghezza e altezza del pannello, meta' fuga, scala (metri)
+varying vec2 vUvFughe;
+float fHash(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }
+vec3 fughe() {
+  vec2 p = vec2(vUvFughe.x, 1. - vUvFughe.y) * fMisure.w;     // UV di Blender (il glTF capovolge v)
+  vec2 cella = floor(p / fMisure.xy), f = p - cella * fMisure.xy;
+  float d = min(min(f.x, fMisure.x - f.x), min(f.y, fMisure.y - f.y));   // distanza dal bordo del pannello
+  float aa = max(length(fwidth(p)), 1e-6);
+  float malta = 1. - smoothstep(fMisure.z - aa * .5, fMisure.z + aa * .5, d);
+  float media = clamp(2. * fMisure.z / fMisure.x + 2. * fMisure.z / fMisure.y, 0., 1.);
+  malta = mix(malta, media, smoothstep(fMisure.z, fMisure.z * 6., aa));
+  return mix(mix(fC1, fC2, fHash(cella)), fMalta, malta);     // tono variabile per pannello, come il Brick di Blender
+}`;
+const PBR_COTTO = THREE.ShaderChunk.lights_physical_pars_fragment.replace('vec3 indirectDiffuse = diffuse * cosineWeightedIrradiance;', 'vec3 indirectDiffuse = vec3( 0.0 );');
+if (PBR_COTTO === THREE.ShaderChunk.lights_physical_pars_fragment) console.warn('three cambiato: la diffusa dell\'envMap si somma di nuovo alla mappa di luce');
+// grana dell'asfalto del piazzale (scena_demo.py): un velo di rumore, non una texture. Grani da ~2.5 cm che spariscono quando
+// diventano piu' piccoli di un pixel (niente sfarfallio da lontano) e macchie larghe un paio di metri, come l'usura vera.
+const GRANA = new Set(['Piazzale asfalto']);
+const GLSL_GRANA = /* glsl */`
+varying vec2 vUvGrana;                                       // UV della facciata/terreno in metri (scena_demo.py)
+float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float gNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(gHash(i), gHash(i + vec2(1, 0)), f.x), mix(gHash(i + vec2(0, 1)), gHash(i + vec2(1, 1)), f.x), f.y);
+}
+float grana() {
+  vec2 p = vUvGrana;
+  float aa = length(fwidth(p));
+  float fine = (gNoise(p * 40.) - .5) * (1. - smoothstep(.012, .05, aa));
+  float macchie = (gNoise(p * .6) - .5) + .5 * (gNoise(p * 2.3) - .5);
+  return 1. + fine * .22 + macchie * .12;
+}`;
+// mappe per telefoni in RGBM (demo_prepara.py, RGBM_MAX = 16): luce = rgb^2 * a^2 * 16
+const MAPPE_RGBM = THREE.ShaderChunk.lights_fragment_maps.replace('vec3 lightMapIrradiance = lightMapTexel.rgb * lightMapIntensity;',
+  'vec3 lightMapIrradiance = lightMapTexel.rgb * lightMapTexel.rgb * ( lightMapTexel.a * lightMapTexel.a * 16.0 ) * lightMapIntensity;');
+if (MAPPE_RGBM === THREE.ShaderChunk.lights_fragment_maps) console.warn('three cambiato: le mappe RGBM dei telefoni non si decodificano');
+function preparaCotto(m) {
+  const nome = m.name.replace(/\.\d+$/, '');
+  const f = FUGHE[nome], g = GRANA.has(nome), rgbm = !!m.lightMap?.userData.rgbm;
+  if (f && !m.userData.tintato) { m.color.multiply(new THREE.Color().setRGB(...f.tinta, THREE.LinearSRGBColorSpace)); m.userData.tintato = true; }   // una volta sola (anche se si richiama dopo la partenza progressiva)
+  m.customProgramCacheKey = () => `cotto${f ? '-fughe' : g ? '-grana' : ''}${rgbm ? '-rgbm' : ''}`;
+  m.onBeforeCompile = (sh) => {
+    // La mappa di luce ha gia' tutta la luce diffusa (diretta e rimbalzi): dall'envMap si prendono solo i riflessi.
+    // three r184 somma l'irradianza dell'envMap anche come diffusa (un riempimento piatto che schiarisce le ombre): quel
+    // termine si toglie. L'irradianza resta per sheen dei tessuti e multiscattering, ma presa dalla mappa di luce (la luce
+    // vera del punto) invece che dal cubemap: senza, il divano perdeva lo sheen e usciva piu' scuro e saturo che in Blender.
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <lights_physical_pars_fragment>', PBR_COTTO)
+      .replace('#include <lights_fragment_maps>', `${rgbm ? MAPPE_RGBM : '#include <lights_fragment_maps>'}\n\tiblIrradiance = irradiance;`);
+    if (g) {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vUvGrana;').replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvUvGrana = uv;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\n${GLSL_GRANA}`).replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.rgb *= grana();');
+    }
+    if (!f) return;
+    const c = (v) => ({ value: new THREE.Vector3(...v) });
+    Object.assign(sh.uniforms, { fC1: c(f.c1), fC2: c(f.c2), fMalta: c(f.malta), fMisure: { value: new THREE.Vector4(f.larghezza, f.altezza, f.spessore, f.scala) } });
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vUvFughe;').replace('#include <uv_vertex>', '#include <uv_vertex>\n\tvUvFughe = uv;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\n${GLSL_FUGHE}`).replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.rgb *= fughe();');
+  };
+}
 const nodiAnte = new Map();                              // nome dell'anta -> { o, base }
 const contenuti = [];                                    // immagini su monitor e telo: si accendono e si spengono
 const monitor = [];                                      // opzione 3: monitor a scomparsa nel tavolo
@@ -119,14 +248,17 @@ const stato = { monitorSu: false, fMonitor: 0, monitorVisti: false };
 const MON = { corsa: .258, piega: 20 * Math.PI / 180, tSale: 1.5, tPiega: .7, tLuce: .35, passo: .09 };   // corsa e piega come in prodotti3d.py
 const liscio = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
 
-async function caricaZona(z, c) {
-  z.stato = 'carico';
+async function caricaZona(z, c, leggera = TOCCO) {
+  z.stato = 'carico'; z.leggera = leggera;
   const base = `./assets/${z.id}/`;
-  const [modello, lmS, lmC] = await Promise.all([
-    leggi(c.gltf, base, z.id, 'glb'), leggi(c.exr, base, 'lm_statico', 'exr'),
-    z.info.mappe.BAKE_sedie ? leggi(c.exr, base, 'lm_sedie', 'exr') : null,
+  const [modello, lmS, lmC, lmE] = await Promise.all([
+    leggi(c.gltf, base, z.id, 'gltf', leggera).catch(() => leggi(c.gltf, base, z.id, 'glb', leggera)), leggiLuce(c, base, 'lm_statico', leggera),   // .gltf con texture in comune/; .glb = asset vecchi
+    z.info.mappe.BAKE_sedie ? leggiLuce(c, base, 'lm_sedie', leggera) : null,
+    z.info.mappe.BAKE_esterno ? leggiLuce(c, base, 'lm_esterno', leggera) : null,
   ]);
-  mappaLuce(lmS); if (lmC) mappaLuce(lmC);
+  z.modello = modello.scene;
+  mappaLuce(lmS); if (lmC) mappaLuce(lmC); if (lmE) mappaLuce(lmE);
+  const mappe = { statico: lmS, sedie: lmC, esterno: lmE };
   modello.scene.traverse((o) => {
     const anta = /^(?:BAKE_statico_)?(Anta\d\d)$/.exec(o.name);
     if (anta) nodiAnte.set(anta[1], { o, base: o.quaternion.clone() });
@@ -140,9 +272,9 @@ async function caricaZona(z, c) {
       o.material = vetroSemplice(o.material); o.renderOrder = 3;
     } else if (g) {
       const m = o.material.clone();
-      m.lightMap = g === 'statico' ? lmS : lmC;
+      m.lightMap = mappe[g];
       m.lightMapIntensity = Math.PI;                     // Cycles salva E/pi, Three.js vuole l'irradianza
-      if (/gres/i.test(m.name)) m.color.multiplyScalar(.72);   // il pavimento risultava piu' chiaro che in Blender
+      preparaCotto(m);
       o.material = m; cotti.push(m);
     } else if (/satinato/i.test(o.material.name)) {
       o.material = satinato; o.renderOrder = 2;
@@ -183,6 +315,36 @@ async function caricaZona(z, c) {
   z.stato = 'pronta'; mondo.pronte.add(z.i); mondo.aggiornaApribili();
 }
 
+// --- partenza progressiva (desktop): la prima stanza arriva in versione leggera (~8 MB invece di ~30), poi in sottofondo si
+// scarica quella piena e si sostituiscono texture e mappe di luce sugli stessi oggetti. Le due versioni nascono dallo stesso
+// bake: stessi oggetti nello stesso ordine, cambia solo la risoluzione. Porte, monitor, prodotti puntabili restano intatti.
+const SLOT = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap', 'sheenColorMap', 'sheenRoughnessMap',
+  'clearcoatMap', 'clearcoatNormalMap', 'clearcoatRoughnessMap', 'specularColorMap', 'specularIntensityMap', 'transmissionMap'];
+async function affina(z, c) {
+  const base = `./assets/${z.id}/`;
+  const [modello, lmS, lmC, lmE] = await Promise.all([
+    leggi(c.gltf, base, z.id, 'gltf', false), leggiLuce(c, base, 'lm_statico', false),
+    z.info.mappe.BAKE_sedie ? leggiLuce(c, base, 'lm_sedie', false) : null,
+    z.info.mappe.BAKE_esterno ? leggiLuce(c, base, 'lm_esterno', false) : null,
+  ]);
+  const vive = [], nuove = [];
+  z.modello.traverse((o) => { if (o.isMesh) vive.push(o); });
+  modello.scene.traverse((o) => { if (o.isMesh) nuove.push(o); });
+  if (vive.length !== nuove.length) { console.warn('versione piena diversa dalla leggera, resta la leggera', z.id); return; }
+  mappaLuce(lmS); if (lmC) mappaLuce(lmC); if (lmE) mappaLuce(lmE);
+  const mappe = { statico: lmS, sedie: lmC, esterno: lmE }, vecchie = new Set();
+  vive.forEach((a, i) => {
+    const ma = a.material, mb = nuove[i].material;
+    for (const k of SLOT) if (ma[k] && mb[k] && ma[k] !== mb[k]) { vecchie.add(ma[k]); ma[k] = mb[k]; }
+    nitida(ma);
+    const g = gruppoBake(a);
+    if (g && ma.lightMap && mappe[g] && ma.lightMap !== mappe[g]) { vecchie.add(ma.lightMap); ma.lightMap = mappe[g]; preparaCotto(ma); ma.needsUpdate = true; }
+  });
+  for (const t of vecchie) t.dispose();                  // le texture leggere non le usa piu' nessuno: via dalla memoria video
+  for (const k of [...texCondivise.keys()]) if (k.includes('_m.ktx2')) texCondivise.delete(k);
+  z.leggera = false;
+}
+
 // --- vista: sedie e piante sono quasi tutti i triangoli della scena. Si disegnano solo quelle delle zone che da qui si possono vedere:
 // muri ciechi e porte in legno chiuse nascondono, le vetrate no. Pareti, arredi e prodotti restano sempre (niente buchi attorno alle porte).
 const INTORNO = [[0, 0], [.3, 0], [-.3, 0], [0, .3], [0, -.3]];
@@ -208,15 +370,48 @@ const cubo = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, g
 const cuboCam = new THREE.CubeCamera(.1, 2000, cubo);
 scene.add(cuboCam);
 const pmrem = new THREE.PMREMGenerator(renderer);
-let riflessi = null;
+// Cambio di stanza: i riflessi passano in dissolvenza invece che di colpo. Le mappe PMREM hanno sempre la stessa forma
+// (stesso cubo di partenza), quindi si mescolano con un solo passaggio a schermo intero. Tre buffer: 'corrente' e' quello che
+// i materiali usano (collegato una volta sola: niente piu' ricompilazione degli shader a ogni stanza), 'partenza' e' la
+// fotografia di quello che si vedeva al momento del cambio (anche a meta' di un'altra dissolvenza), 'arrivo' la nuova ripresa.
+const SFUMA_S = .8;
+const misto = new FullScreenQuad(new THREE.ShaderMaterial({
+  uniforms: { a: { value: null }, b: { value: null }, t: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
+  fragmentShader: 'uniform sampler2D a, b; uniform float t; varying vec2 vUv; void main() { gl_FragColor = mix(texture2D(a, vUv), texture2D(b, vUv), t); }',
+  depthTest: false, depthWrite: false,
+}));
+const rif = { corrente: null, partenza: null, arrivo: null, t: 1 };
+let riflessi = null;                                     // = rif.corrente.texture, l'envMap di tutti i materiali
+function mescola(a, b, t, dove) {
+  const u = misto.material.uniforms; u.a.value = a.texture; u.b.value = b.texture; u.t.value = t;
+  const prima = renderer.getRenderTarget(); renderer.setRenderTarget(dove); misto.render(renderer); renderer.setRenderTarget(prima);
+}
+function nuovoBuffer(w, h) {
+  const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false, depthBuffer: false });
+  rt.texture.mapping = THREE.CubeUVReflectionMapping; rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
+  return rt;
+}
 function riprendi(x, y) {
   for (const m of monitor) m.o.visible = false;
   cuboCam.position.copy(v(x, y, 1.6)); cuboCam.update(renderer, scene);
-  const nuovo = pmrem.fromCubemap(cubo.texture).texture;
-  riflessi?.dispose(); riflessi = nuovo;
-  for (const m of cotti) { m.envMap = riflessi; m.envMapIntensity = m.metalness > .5 ? 1. : .12; m.needsUpdate = true; }
-  for (const m of liberi) { m.envMap = riflessi; m.envMapIntensity = 1.1; m.needsUpdate = true; }
-  for (const m of [vetro, satinato, ...vetriCotti.values()]) { m.envMap = riflessi; m.envMapIntensity = 1.; m.needsUpdate = true; }
+  const nuovo = pmrem.fromCubemap(cubo.texture);
+  if (!rif.corrente) {
+    rif.corrente = nuovoBuffer(nuovo.width, nuovo.height); rif.partenza = nuovoBuffer(nuovo.width, nuovo.height);
+    riflessi = rif.corrente.texture; rif.arrivo = nuovo; mescola(nuovo, nuovo, 1, rif.corrente); rif.t = 1;
+  } else {
+    mescola(rif.corrente, rif.corrente, 0, rif.partenza);   // si parte da quello che si vede adesso
+    rif.arrivo?.dispose(); rif.arrivo = nuovo; rif.t = 0;
+  }
+  const collega = (m, k) => { if (m.envMap !== riflessi) { m.envMap = riflessi; m.envMapIntensity = k; m.needsUpdate = true; } };
+  for (const m of cotti) collega(m, 1.);
+  for (const m of liberi) collega(m, 1.1);
+  for (const m of [vetro, satinato, ...vetriCotti.values()]) collega(m, 1.);
+}
+function aggiornaRiflessi(dt) {
+  if (rif.t >= 1 || !rif.arrivo) return;
+  rif.t = Math.min(1, rif.t + dt / SFUMA_S);
+  mescola(rif.partenza, rif.arrivo, liscio(rif.t), rif.corrente);
 }
 
 // --- partenza: la zona in cui si entra si carica per prima, le altre in ordine di distanza --------------------
@@ -228,19 +423,46 @@ if (!prima_zona?.info) {                                   // se la sala CdA non
 }
 if (!prima_zona) { document.querySelector('#carica div').textContent = 'Mancano gli asset: lanciare prima il bake'; throw new Error('nessuna zona in assets/'); }
 const [, esterno] = await Promise.all([
-  caricaZona(prima_zona, primi),
+  caricaZona(prima_zona, primi, true),                   // versione leggera: si entra prima (sul desktop poi si affina)
   leggi(primi.exr, './assets/cda/', 'esterno', 'exr').catch(() => null),
 ]);
 if (esterno) {
-  esterno.mapping = THREE.EquirectangularReflectionMapping; esterno.colorSpace = THREE.LinearSRGBColorSpace;
-  scene.background = esterno; scene.backgroundRotation.set(0, Math.PI / 2, 0);
-  scene.backgroundIntensity = 2.2;                       // confrontato con il render di Blender: a 8 il paesaggio bruciava e accendeva il bloom
+  // Esterno a fasce di distanza. Il panorama (demo_prepara.py) e' ripreso dal centro della sala CdA, 1.5 m sopra il pavimento;
+  // il terreno e' 3.6 m sotto il pavimento (siamo al primo piano). Uno sfondo all'infinito metteva prato e strada "all'orizzonte"
+  // sotto le finestre: guardando giu' l'edificio sembrava sospeso. GroundedSkybox proietta la parte bassa del panorama su un
+  // piano alla quota vera del terreno, quindi prato e strada hanno la prospettiva giusta mentre si cammina. Lontano: foschia
+  // che cresce con la distanza, perche' il fuori resti uno sfondo e non distragga dall'interno.
+  const zc = ZONE.find((z) => z.id === 'cda')?.info?.zona ?? [13.86, 29.27, -.56, 7.18];
+  const PANO = { x: (zc[0] + zc[1]) / 2, y: (zc[2] + zc[3]) / 2, z: 1.5 }, TERRA = -3.6;   // come demo_prepara.py e costruisci_blender.py
+  esterno.colorSpace = THREE.LinearSRGBColorSpace;
+  const cielo = new GroundedSkybox(esterno, PANO.z - TERRA, 1500, 96);   // raggio: piu' grande = terreno piatto piu' lontano (strade dritte); deve restare sotto il far della camera (2000)
+  cielo.position.copy(v(PANO.x, PANO.y, PANO.z)); cielo.rotation.y = Math.PI / 2;   // stesso orientamento del vecchio sfondo
+  // misurato contro il render Cycles dalla stessa camera (cielo e prato): 1.15. Il vecchio 2.2 era tarato sulla catena
+  // colore precedente (AgX di three.js + LUT a 8 bit) e con quella attuale rendeva le finestre slavate.
+  cielo.material.color.setScalar(1.15);
+  cielo.material.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vMondo;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n\tvMondo = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vMondo;')
+      .replace('#include <opaque_fragment>', `
+      float dist = distance(vMondo, cameraPosition);
+      float velo = (1. - exp(-dist / 450.)) * .16;        // foschia: quasi nulla sotto le finestre, ~15% all'orizzonte
+      float l = dot(outgoingLight, vec3(.2126, .7152, .0722));
+      outgoingLight = mix(outgoingLight, vec3(l * 1.05) * vec3(.94, .97, 1.), velo);
+      #include <opaque_fragment>`);
+  };
+  cielo.renderOrder = -1; cielo.frustumCulled = false;
+  scene.add(cielo);
 } else scene.background = new THREE.Color(.75, .82, .9);
 riprendi(io.x, io.y);
 
 const distZona = (z) => Math.hypot(Math.max(z.r[0] - io.x, 0, io.x - z.r[1]), Math.max(z.r[2] - io.y, 0, io.y - z.r[3]));
 (async () => {
   const caricoEl = $('carico');
+  if (!TOCCO && prima_zona.leggera) {                    // prima di tutto la piena qualita' della stanza in cui si e'
+    caricoEl.textContent = `Dettagli: ${prima_zona.nome}`; caricoEl.hidden = false;
+    try { await affina(prima_zona, dopo); riprendi(io.x, io.y); } catch (e) { console.warn('versione piena non caricata', prima_zona.id, e); }
+  }
   for (;;) {
     const z = ZONE.filter((q) => q.stato === 'attesa').sort((a, b) => distZona(a) - distZona(b))[0];
     if (!z) break;
@@ -259,8 +481,12 @@ let bloccato = false;
 const prova = { attiva: false };                         // solo per i controlli automatici, senza blocco del mouse
 const fermo = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// ingresso: la scena emerge dal buio mentre lo schermo di caricamento si dissolve (CSS, 1.2 s), come luci che si accendono
+const avvio = { t: fermo ? 1 : 0, durata: 1.6 };
+colore.uniforms.esposizione.value = fermo ? 1 : .04;
 document.querySelector('#carica').classList.add('via');
 ingresso.hidden = false;
+if (!TOCCO) $('entra-pieno').focus({ preventScroll: true });   // Invio = entra a schermo intero
 
 const tela = renderer.domElement;
 // comandi a tocco: a sinistra la leva per camminare, altrove si trascina per guardare, un tocco breve usa quello che si punta
@@ -273,17 +499,34 @@ function entra(si) {                                     // dentro la visita (mo
   ingresso.hidden = si;
   document.body.classList.toggle('dentro', si);
   aiuto.classList.toggle('discreto', si);
-  if (!si) { tasti.clear(); mollaLeva(); sguardo.id = null; }
+  if (!si) { tasti.clear(); mollaLeva(); sguardo.id = null; if (!TOCCO) $('entra-pieno').focus({ preventScroll: true }); }
 }
+// desktop: schermo intero suggerito (pulsante principale) o in finestra; mouse catturato con lo stesso clic.
+// Esc esce da entrambi e la scheda ricompare.
+function entraDesktop(pieno) {
+  if (pieno && !document.fullscreenElement) document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
+  tela.requestPointerLock();
+}
+$('entra-pieno').addEventListener('click', (e) => { e.stopPropagation(); entraDesktop(true); });
+$('entra-finestra').addEventListener('click', (e) => { e.stopPropagation(); entraDesktop(false); });
 ingresso.addEventListener('click', () => {
-  if (!TOCCO) { tela.requestPointerLock(); return; }
+  if (!TOCCO) return;
   entra(true);                                           // sui telefoni: schermo intero e orizzontale, dove il browser lo permette
   try {
     document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.then(() => screen.orientation?.lock?.('landscape')?.catch(() => {}), () => {});
   } catch { /* schermo intero non disponibile (iPhone): si resta nella pagina */ }
 });
-tela.addEventListener('click', () => { if (TOCCO) return; if (!bloccato) tela.requestPointerLock(); else usa(); });
-document.addEventListener('pointerlockchange', () => { if (!TOCCO) entra(document.pointerLockElement === tela); });
+tela.addEventListener('click', () => {
+  if (TOCCO) return;
+  if (vista.abaco) apriAbaco(false);                    // clic fuori dal pannello: si chiude l'inventario e si riprende il mouse
+  else if (document.pointerLockElement !== tela) tela.requestPointerLock();
+  else usa();
+});
+// mouse rilasciato: si esce dalla visita (torna la scheda), tranne quando lo libera l'inventario
+document.addEventListener('pointerlockchange', () => {
+  if (TOCCO) return;
+  if (document.pointerLockElement === tela) entra(true); else if (!vista.abaco) entra(false);
+});
 tela.addEventListener('pointerdown', (e) => {
   if (!TOCCO || !bloccato || vista.abaco) return;
   e.preventDefault();
@@ -319,7 +562,8 @@ function finePuntatore(e) {
 tela.addEventListener('pointerup', finePuntatore);
 tela.addEventListener('pointercancel', finePuntatore);
 document.addEventListener('mousemove', (e) => {
-  if (!bloccato || Math.abs(e.movementX) > 300 || Math.abs(e.movementY) > 300) return;   // scarta i salti del puntatore
+  if (!bloccato || vista.abaco) return;                  // inventario aperto: la visuale resta ferma
+  if (Math.abs(e.movementX) > 300 || Math.abs(e.movementY) > 300) return;   // scarta i salti del puntatore
   io.yaw -= e.movementX * .0021;
   io.pitch = THREE.MathUtils.clamp(io.pitch - e.movementY * .0021, -1.35, 1.35);
 });
@@ -523,10 +767,16 @@ function cambiaZona() {
   document.title = z?.nome ?? 'Sede';
   costruisciAbaco(); azioni();
 }
-function apriAbaco(si) {
+// Desktop: con l'inventario aperto il mouse si libera (si cliccano e si scorrono le voci) e la visita resta ferma; chiudendo
+// (I o clic fuori dal pannello, gesti validi per il browser) il mouse si riprende. riprendi=false: Esc, si torna alla scheda.
+function apriAbaco(si, riprendi = true) {
+  if (si === vista.abaco) return;
   vista.abaco = si;
   document.body.classList.toggle('abaco', si);
-  if (si) { tasti.clear(); mollaLeva(); sguardo.id = null; costruisciAbaco(); scegli(attuale && righe.has(attuale) ? attuale : ordine[0]); }
+  if (si) { tasti.clear(); mollaLeva(); sguardo.id = null; io.vx = 0; io.vy = 0; costruisciAbaco(); scegli(attuale && righe.has(attuale) ? attuale : ordine[0]); }   // niente scivolata residua
+  if (TOCCO) return;
+  if (si && document.pointerLockElement === tela) document.exitPointerLock();
+  else if (!si && riprendi && bloccato) tela.requestPointerLock()?.catch?.(() => {});   // se il browser rifiuta, basta un clic sulla scena
 }
 function sposta(d) {
   const i = ordine.indexOf(scelto);
@@ -537,9 +787,9 @@ addEventListener('keydown', (e) => {
   if (!vista.abaco) return;
   if (['ArrowDown', 'KeyS'].includes(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); sposta(1); }
   else if (['ArrowUp', 'KeyW'].includes(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); sposta(-1); }
-  else if (e.code === 'Escape' && !bloccato) apriAbaco(false);
+  else if (e.code === 'Escape') { apriAbaco(false, false); if (!TOCCO) entra(false); }
 }, { capture: true });
-addEventListener('wheel', (e) => { if (vista.abaco && bloccato) sposta(Math.sign(e.deltaY)); }, { passive: true });
+addEventListener('wheel', (e) => { if (vista.abaco && document.pointerLockElement) sposta(Math.sign(e.deltaY)); }, { passive: true });   // a mouse libero la rotella scorre l'elenco come di solito
 
 // --- mirino, angoli, richiamo e scheda -----------------------------------------------------------
 function punta() {
@@ -622,15 +872,55 @@ addEventListener('keydown', (e) => { if (e.code === 'KeyF' && !e.repeat && !e.ct
 let contaSalvato = false; try { contaSalvato = !!localStorage.getItem('conta'); } catch { /* navigazione privata */ }
 mostraConta(new URLSearchParams(location.search).has('fps') || contaSalvato);
 
+// --- disegno su richiesta: da fermi la scena non si ridisegna 60 volte al secondo (batteria e calore sui telefoni). Si disegna
+// se la camera si sposta (>1 mm) o ruota, se c'e' un'animazione (porte, monitor, riflessi, ingresso), nei 2 s dopo un input o
+// dopo il caricamento di una zona; altrimenti 2 fotogrammi al secondo, che bastano a non perdere nulla.
+const ridisegno = { finoA: 0, ultimo: 0, firma: '' };
+const sveglia = () => { ridisegno.finoA = performance.now() + 2000; };
+for (const ev of ['keydown', 'keyup', 'pointerdown', 'pointermove', 'pointerup', 'wheel', 'touchstart', 'touchmove', 'resize']) addEventListener(ev, sveglia, { passive: true });
+function firmaScena() {                                 // posizione e sguardo di chi visita, non la camera: il "respiro" da fermi non conta
+  let ante = 0; for (const a of mondo.ante) ante += a.angolo ?? 0;
+  return [io.x, io.y].map((x) => Math.round(x * 1000)).join() + '|' + [io.pitch, io.yaw].map((x) => Math.round(x * 1e4)).join() + '|' + Math.round(io.amp * 100)
+    + '|' + Math.round(ante * 1e3) + '|' + Math.round(stato.fMonitor * 1e3) + '|' + mondo.pronte.size + '|' + (attuale?.voce ?? '');
+}
+// --- risoluzione adattiva: se il dispositivo non regge (sotto ~45 fps per 2 s) si scende di un gradino, con margine si risale
+const RIS_MAX = renderer.getPixelRatio(), RIS_MIN = Math.max(.6, RIS_MAX * .55);
+const adatta = { t: 0, n: 0, somma: 0, buoni: 0 };
+function adattaRisoluzione(ms) {
+  if (ms > 250) return;                                  // scheda in secondo piano o caricamento: non conta
+  adatta.n++; adatta.somma += ms; adatta.t += ms;
+  if (adatta.t < 2000) return;
+  const medio = adatta.somma / adatta.n, ora = renderer.getPixelRatio();
+  let nuova = ora;
+  if (medio > 22 && ora > RIS_MIN) { nuova = Math.max(RIS_MIN, ora - .15); adatta.buoni = 0; }
+  else if (medio < 15) { if (++adatta.buoni >= 3 && ora < RIS_MAX) { nuova = Math.min(RIS_MAX, ora + .1); adatta.buoni = 0; } }
+  else adatta.buoni = 0;
+  if (nuova !== ora) { renderer.setPixelRatio(nuova); composer.setPixelRatio(nuova); composer.setSize(innerWidth, innerHeight); }
+  adatta.t = 0; adatta.n = 0; adatta.somma = 0;
+}
+
 let prima = performance.now();
 renderer.setAnimationLoop((ora) => {
   const ms = Math.max(ora - prima, 0), dt = Math.min(ms / 1000, .05);
   prima = ora;
-  renderer.info.reset();
   aggiorna(dt, ora / 1000);
   punta();
+  const animazioni = rif.t < 1 || avvio.t < 1 || (stato.fMonitor > 0 && stato.fMonitor < 1);
+  aggiornaRiflessi(dt);
+  if (avvio.t < 1) {                                    // esposizione da quasi nero a 1, curva morbida all'arrivo
+    avvio.t = Math.min(1, avvio.t + dt / avvio.durata);
+    colore.uniforms.esposizione.value = .04 + .96 * (1 - (1 - avvio.t) ** 3);
+  }
+  const firma = firmaScena();
+  const serve = animazioni || ora < ridisegno.finoA || firma !== ridisegno.firma || ora - ridisegno.ultimo > 500 || conta.su;
+  if (!serve) return;
+  if (firma !== ridisegno.firma) sveglia();
+  ridisegno.firma = firma;
+  renderer.info.reset();
   composer.render();
+  if (ora - ridisegno.ultimo < 100) adattaRisoluzione(ora - ridisegno.ultimo);   // solo fotogrammi consecutivi
+  ridisegno.ultimo = ora;
   if (conta.su) misura(ora, ms);
 });
 setInterval(azioni, 1000);                              // la riga dei tasti segue quello che e' gia' stato caricato
-window.__demo = { renderer, conta, TOCCO, leva, entra, io, tasti, prova, mondo, punta, usa, stato, zoneProdotti, contenuti, monitor, nodiAnte, ZONE, camera, scene, apriAbaco };
+window.__demo = { ridisegno, renderer, conta, TOCCO, leva, entra, io, tasti, prova, mondo, punta, usa, stato, zoneProdotti, contenuti, monitor, nodiAnte, ZONE, camera, scene, apriAbaco };

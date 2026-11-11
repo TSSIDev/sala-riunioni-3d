@@ -5,203 +5,233 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Sede</title>
 <style>
-  /* Linguaggio: tavola tecnica d'architetto. Bahnschrift (DIN 1451, installato su Windows 10/11) per numeri ed etichette,
-     Segoe UI per il testo; fondo scuro quasi pieno, linee sottili, un solo accento color rovere come le lamelle della sala. */
+  /* Interfaccia sopra la scena 3D. La scena e' chiara (vetrate, intonaco, soffitti illuminati): il testo non deve mai dipendere
+     da quello che c'e' dietro. Quindi: pannelli quasi pieni con sfocatura dello sfondo, ombra morbida che li stacca dal bianco,
+     testo mai sotto 12px, etichette in minuscolo (il maiuscolo spaziato piccolo si legge male), contrasto >= 4.5:1 anche
+     per il testo secondario. Due voci: Bahnschrift (DIN, gia' su Windows) per titoli e cifre, Segoe UI per tutto il resto.
+     Un solo accento, il rovere delle lamelle, schiarito perche' regga sul fondo scuro. */
   :root {
     color-scheme: dark;
-    --ink: #eee8dc; --dim: rgba(238,232,220,.64); --faint: rgba(238,232,220,.54); --rule: rgba(238,232,220,.14);
-    --sheet: rgba(17,16,14,.9); --sheet-pieno: rgba(15,14,12,.95);
-    --oak: #c9a36a; --oak-rule: rgba(201,163,106,.42); --oak-wash: rgba(201,163,106,.08);
-    --tech: "Bahnschrift", "DIN Alternate", "D-DIN", "Roboto Condensed", ui-sans-serif, sans-serif;
+    --ink: #f5f2ec; --dim: rgba(245,242,236,.80); --faint: rgba(245,242,236,.64); --rule: rgba(255,255,255,.11); --rule-forte: rgba(255,255,255,.2);
+    --sheet: rgba(24,23,21,.86); --sheet-pieno: rgba(22,21,19,.94); --blur: blur(16px) saturate(1.15);
+    --ombra: 0 12px 32px -12px rgba(0,0,0,.55), 0 2px 6px -2px rgba(0,0,0,.3);
+    --oak: #e3bd80; --oak-hover: #edcb93; --oak-rule: rgba(227,189,128,.5); --oak-wash: rgba(227,189,128,.12); --su-oak: #1d1913;
+    --r: 10px; --r-piccolo: 6px;
+    --head: "Bahnschrift", "DIN Alternate", "D-DIN", ui-sans-serif, sans-serif;
     --text: "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #14130f; overflow: hidden; font: 15px/1.4 var(--text); color: var(--ink); }
+  html, body { margin: 0; height: 100%; background: #14130f; overflow: hidden; font: 15px/1.45 var(--text); color: var(--ink); -webkit-font-smoothing: antialiased; }
   canvas { display: block; position: fixed; inset: 0; }
   [hidden] { display: none !important; }
-  .tech { font-family: var(--tech); font-stretch: 87.5%; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
-  kbd { font: 500 12px/1 var(--tech); font-stretch: 87.5%; color: var(--ink); min-width: 22px; padding: 4px 6px 3px; text-align: center;
-    border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; display: inline-block; }
+  ::selection { background: var(--oak); color: var(--su-oak); }
+  .tech { font-variant-numeric: tabular-nums; }
+  kbd { font: 600 12px/1 var(--text); color: var(--ink); min-width: 24px; padding: 5px 7px 4px; text-align: center; display: inline-block;
+    background: rgba(255,255,255,.08); border: 1px solid var(--rule-forte); border-bottom-width: 2px; border-radius: var(--r-piccolo); }
+  #titolo, #scheda, #abaco, #invito, #tocchi-su button, #t-azioni button { -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
 
-  /* --- cartiglio in alto a sinistra ---------------------------------------------------------------- */
-  #titolo { position: fixed; left: 18px; top: 18px; pointer-events: none; min-width: 210px; background: var(--sheet); border: 1px solid var(--rule);
-    border-radius: 3px; transition: opacity .5s; }
-  #titolo .riga { display: flex; justify-content: space-between; gap: 18px; padding: 7px 12px; }
+  /* --- in alto a sinistra: dove si e' e cosa si puo' fare -------------------------------------------- */
+  #titolo { position: fixed; left: 20px; top: 20px; pointer-events: none; min-width: 240px; max-width: 320px; background: var(--sheet);
+    border: 1px solid var(--rule); border-radius: var(--r); box-shadow: var(--ombra); overflow: hidden; }
+  #titolo .riga { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 9px 14px; }
   #titolo .riga + .riga { border-top: 1px solid var(--rule); }
-  #titolo .rif { font-size: 11px; color: var(--faint); letter-spacing: .1em; text-transform: uppercase; }
-  #titolo h1 { margin: 0; font: 600 21px/1.1 var(--tech); font-stretch: 87.5%; letter-spacing: .01em; }
-  #titolo .stato { font-size: 12px; color: var(--dim); align-items: center; }
-  #titolo .stato b { font: 600 13px var(--tech); color: var(--oak); }
-  #titolo .stato kbd { margin-right: 5px; font-size: 11px; padding: 3px 5px 2px; }
-  #titolo.discreto { opacity: .7; }
+  #titolo .riga:first-child { padding-top: 11px; padding-bottom: 0; }
+  #titolo .riga:first-child + .riga { border-top: 0; padding-top: 1px; padding-bottom: 12px; }
+  #titolo .rif { font-size: 12px; color: var(--faint); }
+  #titolo h1 { margin: 0; font: 600 24px/1.15 var(--head); letter-spacing: -.005em; }
+  #titolo .stato { font-size: 13px; color: var(--dim); }
+  #titolo .stato b { font: 600 14px var(--head); color: var(--oak); font-variant-numeric: tabular-nums; }
+  #titolo .stato kbd { margin-right: 7px; }
+  #titolo .azioni { flex-direction: column; align-items: flex-start; gap: 7px; color: var(--ink); padding-block: 10px; }
+  #titolo .azioni span { display: flex; align-items: center; }
+  #titolo #carico { justify-content: flex-start; gap: 9px; font-size: 12.5px; color: var(--faint); }
+  #carico::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--oak); animation: pulsa 1.2s ease-in-out infinite; }
+  @keyframes pulsa { 50% { opacity: .25; } }
   #conta { border-top: 1px solid var(--rule); }
-  #conta .riga { font-size: 11.5px; color: var(--faint); padding-block: 5px; }
-  #conta .riga:first-child { font-size: 12px; color: var(--dim); }
+  #conta .riga { font-size: 12px; color: var(--faint); padding-block: 5px; }
+  #conta .riga:first-child { font-size: 13px; color: var(--dim); }
 
   /* --- schermata d'ingresso e caricamento ----------------------------------------------------------- */
-  #ingresso { all: unset; position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); cursor: pointer; width: min(480px, calc(100vw - 32px));
-    background: var(--sheet-pieno); border: 1px solid var(--rule); border-radius: 3px; }
-  #ingresso:focus-visible { outline: 1.5px solid var(--oak); outline-offset: 3px; }
-  #ingresso .testa { padding: 20px 22px 16px; border-bottom: 1px solid var(--rule); }
-  #ingresso .rif { font: 11px var(--tech); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
-  #ingresso strong { display: flex; align-items: baseline; justify-content: space-between; margin-top: 6px; font: 600 24px/1.1 var(--tech); font-stretch: 87.5%; }
-  #ingresso strong span { font: 400 13px var(--text); color: var(--oak); }
-  #ingresso:hover strong span { text-decoration: underline; text-underline-offset: 4px; }
-  #ingresso ul { list-style: none; margin: 0; padding: 12px 22px 18px; display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; align-items: center;
-    font-size: 13.5px; color: var(--dim); }
+  #ingresso { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(520px, calc(100vw - 32px)); color: var(--ink);
+    background: var(--sheet-pieno); border: 1px solid var(--rule); border-radius: 14px; box-shadow: 0 30px 70px -20px rgba(0,0,0,.6); overflow: hidden;
+    -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+  body.tocco #ingresso { cursor: pointer; }               /* sul telefono si entra toccando la scheda ovunque */
+  #ingresso .testa { padding: 22px 24px 20px; }
+  #ingresso .rif { font-size: 13px; color: var(--faint); }
+  #ingresso strong { display: block; margin-top: 4px; font: 600 30px/1.1 var(--head); letter-spacing: -.01em; }
+  #ingresso .scelte { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+  #ingresso .scelte button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 9px; padding: 10px 18px; border-radius: 999px;
+    font: 600 14px var(--text); cursor: pointer; transition: background-color .15s, border-color .15s; }
+  #ingresso .scelte button svg { width: 15px; height: 15px; flex: none; }
+  #ingresso .scelte .primario { background: var(--oak); color: var(--su-oak); }
+  #ingresso .scelte .primario:hover, #ingresso .scelte .primario:focus-visible { background: var(--oak-hover); }
+  #ingresso .scelte .secondario { color: var(--ink); border: 1px solid var(--rule-forte); background: rgba(255,255,255,.04); }
+  #ingresso .scelte .secondario:hover, #ingresso .scelte .secondario:focus-visible { background: rgba(255,255,255,.1); }
+  #ingresso .scelte button:focus-visible { outline: 2px solid var(--oak); outline-offset: 3px; }
+  #ingresso ul { list-style: none; margin: 0; padding: 16px 24px 22px; display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: center;
+    font-size: 14px; color: var(--dim); border-top: 1px solid var(--rule); background: rgba(0,0,0,.14); }
   #ingresso li { display: contents; }
   #ingresso li span:first-child { display: flex; gap: 4px; }
-  #carica { position: fixed; inset: 0; display: grid; place-content: center; gap: 14px; background: #14130f; transition: opacity .7s; text-align: center; }
-  #carica div:first-child { font: 13px var(--tech); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  #carica { position: fixed; inset: 0; display: grid; place-content: center; gap: 16px; background: #14130f; transition: opacity 1.2s cubic-bezier(.4, 0, .2, 1); text-align: center; }
+  #carica div:first-child { font: 500 15px var(--text); color: var(--dim); }
   #carica.via { opacity: 0; pointer-events: none; }
-  #barra { width: 240px; height: 1px; background: var(--rule); }
+  #barra { width: 260px; height: 3px; border-radius: 2px; background: var(--rule); overflow: hidden; }
   #barra i { display: block; height: 100%; width: 0; background: var(--oak); transition: width .25s; }
 
-  /* --- mirino, angoli e richiamo -------------------------------------------------------------------- */
-  #mirino { position: fixed; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; pointer-events: none;
-    background: var(--ink); opacity: .8; box-shadow: 0 0 0 1px rgba(0,0,0,.3); transition: width .18s, height .18s, margin .18s, background-color .18s; }
-  #mirino.su { width: 18px; height: 18px; margin: -9px 0 0 -9px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink), 0 0 0 1px rgba(0,0,0,.25), inset 0 0 0 2.5px rgba(0,0,0,.2); }
+  /* --- mirino, angoli e richiamo: bianco con un filo scuro, si vede sia sul legno sia sulle vetrate ----- */
+  #mirino { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; pointer-events: none;
+    background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,.45); transition: width .18s, height .18s, margin .18s, background-color .18s, box-shadow .18s; }
+  #mirino.su { width: 20px; height: 20px; margin: -10px 0 0 -10px; background: transparent; box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px rgba(0,0,0,.35), inset 0 0 0 3px rgba(0,0,0,.25); }
   #cornice { position: fixed; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity .16s; }
   #cornice.su { opacity: 1; }
-  #cornice i { position: absolute; width: 11px; height: 11px; border: 0 solid var(--ink); filter: drop-shadow(0 0 1px rgba(0,0,0,.75)) drop-shadow(0 0 2px rgba(0,0,0,.35)); }
-  #cornice i:nth-child(1) { left: 0; top: 0; border-width: 1.5px 0 0 1.5px; }
-  #cornice i:nth-child(2) { right: 0; top: 0; border-width: 1.5px 1.5px 0 0; }
-  #cornice i:nth-child(3) { right: 0; bottom: 0; border-width: 0 1.5px 1.5px 0; }
-  #cornice i:nth-child(4) { left: 0; bottom: 0; border-width: 0 0 1.5px 1.5px; }
+  #cornice i { position: absolute; width: 13px; height: 13px; border: 0 solid #fff; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)) drop-shadow(0 0 3px rgba(0,0,0,.35)); }
+  #cornice i:nth-child(1) { left: 0; top: 0; border-width: 2px 0 0 2px; border-top-left-radius: 3px; }
+  #cornice i:nth-child(2) { right: 0; top: 0; border-width: 2px 2px 0 0; border-top-right-radius: 3px; }
+  #cornice i:nth-child(3) { right: 0; bottom: 0; border-width: 0 2px 2px 0; border-bottom-right-radius: 3px; }
+  #cornice i:nth-child(4) { left: 0; bottom: 0; border-width: 0 0 2px 2px; border-bottom-left-radius: 3px; }
   #richiamo { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .2s; overflow: visible; }
   #richiamo.su { opacity: 1; }
-  #richiamo path { fill: none; stroke: var(--ink); stroke-width: 1; opacity: .8; filter: drop-shadow(0 0 1px rgba(0,0,0,.6)); }
-  #richiamo circle { fill: var(--ink); filter: drop-shadow(0 0 1px rgba(0,0,0,.6)); }
+  #richiamo path { fill: none; stroke: #fff; stroke-width: 1.25; opacity: .9; filter: drop-shadow(0 0 1.5px rgba(0,0,0,.7)); }
+  #richiamo circle { fill: #fff; filter: drop-shadow(0 0 1.5px rgba(0,0,0,.7)); }
 
   /* --- scheda del prodotto puntato ------------------------------------------------------------------ */
-  #scheda { position: fixed; left: 50%; top: 50%; width: 318px; pointer-events: none; background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px;
-    box-shadow: 0 20px 40px -20px rgba(0,0,0,.6); opacity: 0; transform: translate(-4px, 0); transition: opacity .2s ease-out, transform .2s ease-out; }
+  #scheda { position: fixed; left: 50%; top: 50%; width: 336px; pointer-events: none; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--r);
+    box-shadow: var(--ombra); overflow: hidden; opacity: 0; transform: translate(-4px, 0); transition: opacity .2s ease-out, transform .2s ease-out; }
   #scheda.su { opacity: 1; transform: none; }
-  .intestazione { display: flex; align-items: stretch; border-bottom: 1px solid var(--rule); }
-  .intestazione > * { padding: 7px 12px 6px; font: 12px/1.2 var(--tech); font-stretch: 87.5%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
-  .intestazione .voce { color: var(--oak); border-right: 1px solid var(--rule); }
-  .intestazione .voce b { font-size: 15px; font-weight: 600; letter-spacing: .02em; margin-left: 4px; }
-  .intestazione .pezzi { border-right: 1px solid var(--rule); color: var(--ink); font-size: 14px; letter-spacing: .02em; text-transform: none; }
-  .intestazione .gruppo { margin-left: auto; align-self: center; }
-  #scheda .corpo { padding: 12px 14px 14px; }
-  #scheda h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.005em; }
-  #scheda .ruolo { margin: 2px 0 0; font-size: 13.5px; color: var(--dim); }
-  .dati { display: grid; grid-template-columns: 86px 1fr; gap: 5px 12px; margin: 11px 0 0; padding-top: 10px; border-top: 1px dashed var(--rule); font-size: 13px; }
-  .dati dt { font: 11px/1.7 var(--tech); font-stretch: 87.5%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .intestazione { display: flex; align-items: center; gap: 8px; padding: 12px 16px 0; font-size: 12.5px; color: var(--faint); }
+  .intestazione .voce { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 8px; border-radius: var(--r-piccolo); background: var(--oak-wash); color: var(--oak); }
+  .intestazione .voce b { font: 600 14px var(--head); font-variant-numeric: tabular-nums; }
+  .intestazione .pezzi { color: var(--ink); font: 600 14px var(--head); font-variant-numeric: tabular-nums; }
+  .intestazione .pezzi:empty { display: none; }
+  .intestazione .gruppo { margin-left: auto; }
+  #scheda .corpo { padding: 8px 16px 16px; }
+  #scheda h2 { margin: 0; font: 600 21px/1.2 var(--head); letter-spacing: -.005em; text-wrap: balance; }
+  #scheda .ruolo { margin: 3px 0 0; font-size: 14px; color: var(--dim); }
+  .dati { display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 13.5px; }
+  .dati dt { font-size: 12.5px; line-height: 1.55; color: var(--faint); }
   .dati dd { margin: 0; }
-  .nota { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink); opacity: .88; }
-  .usa { display: flex; align-items: center; gap: 8px; margin: 11px 0 0; padding-top: 10px; border-top: 1px dashed var(--rule); font-size: 13px; color: var(--oak); }
-  .usa kbd { color: var(--oak); border-color: var(--oak-rule); }
-  #titolo .azioni { flex-direction: column; align-items: flex-start; gap: 5px; color: var(--ink); }
-  #titolo .azioni span { display: flex; align-items: center; }
-  #invito { position: fixed; left: 50%; top: calc(50% + 26px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; pointer-events: none;
-    padding: 6px 11px 6px 8px; background: var(--sheet); border: 1px solid var(--oak-rule); border-radius: 3px; font-size: 13px; color: var(--ink); white-space: nowrap; }
-  #invito kbd { color: var(--oak); border-color: var(--oak-rule); }
+  .nota { margin: 12px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--dim); }
+  .usa { display: flex; align-items: center; gap: 9px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 14px; font-weight: 600; color: var(--oak); }
+  .usa kbd { color: var(--su-oak); background: var(--oak); border-color: transparent; }
+  #invito { position: fixed; left: 50%; top: calc(50% + 30px); transform: translateX(-50%); display: flex; align-items: center; gap: 9px; pointer-events: none;
+    padding: 6px 14px 6px 6px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 999px; box-shadow: var(--ombra);
+    font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  #invito kbd { color: var(--su-oak); background: var(--oak); border-color: transparent; border-radius: 999px; }
   body:not(.dentro) #invito, body.abaco #invito { visibility: hidden; }
-  #carico { font: 11px var(--tech); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
-  #a-vuoto { margin: 0; padding: 22px 16px; font-size: 13.5px; color: var(--dim); align-self: start; }
+  #a-vuoto { margin: 0; padding: 24px 20px; font-size: 14px; color: var(--dim); align-self: start; }
   #abaco:has(#a-vuoto:not([hidden])) #elenco { display: none; }
   body:not(.dentro) #mirino, body:not(.dentro) #cornice, body:not(.dentro) #scheda, body:not(.dentro) #richiamo,
   body.abaco #mirino, body.abaco #cornice, body.abaco #scheda, body.abaco #richiamo { visibility: hidden; }
 
-  /* --- abaco: inventario della sala ----------------------------------------------------------------- */
+  /* --- inventario dell'ambiente --------------------------------------------------------------------- */
   #velo { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s;
-    background: linear-gradient(to left, rgba(9,8,7,.62) 0, rgba(9,8,7,.38) 480px, rgba(9,8,7,.12) 100%); }
+    background: linear-gradient(to left, rgba(9,8,7,.66) 0, rgba(9,8,7,.42) 500px, rgba(9,8,7,.16) 100%); }
   body.abaco #velo { opacity: 1; }
-  #abaco { position: fixed; top: 18px; right: 18px; bottom: 18px; width: min(452px, calc(100vw - 36px)); display: grid; grid-template-rows: auto 1fr auto;
-    background: var(--sheet-pieno); border: 1px solid var(--rule); border-radius: 3px; box-shadow: 0 30px 60px -30px rgba(0,0,0,.7);
-    opacity: 0; visibility: hidden; transform: translateX(10px); transition: opacity .22s ease-out, transform .22s ease-out, visibility 0s .22s; }
+  #abaco { position: fixed; top: 20px; right: 20px; bottom: 20px; width: min(470px, calc(100vw - 40px)); display: grid; grid-template-rows: auto 1fr auto;
+    background: var(--sheet-pieno); border: 1px solid var(--rule); border-radius: 14px; box-shadow: 0 30px 70px -24px rgba(0,0,0,.7); overflow: hidden;
+    opacity: 0; visibility: hidden; transform: translateX(12px); transition: opacity .22s ease-out, transform .22s ease-out, visibility 0s .22s; }
   body.abaco #abaco { opacity: 1; visibility: visible; transform: none; transition: opacity .22s ease-out, transform .22s ease-out; }
-  #abaco header .riga { display: flex; justify-content: space-between; padding: 9px 16px 8px; border-bottom: 1px solid var(--rule);
-    font: 11px var(--tech); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
-  #abaco h2 { margin: 0; padding: 14px 16px 12px; font: 600 26px/1.05 var(--tech); font-stretch: 87.5%; }
-  #abaco h2 small { display: block; margin-top: 5px; font: 400 13px var(--text); color: var(--dim); }
-  #abaco .cifre { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
-  #abaco .cifre div { padding: 8px 16px 9px; }
-  #abaco .cifre div + div { border-left: 1px solid var(--rule); }
-  #abaco .cifre b { display: block; font: 600 22px/1 var(--tech); font-variant-numeric: tabular-nums; }
+  #abaco header .riga { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 0; font-size: 12.5px; color: var(--faint); }
+  #abaco h2 { margin: 0; padding: 4px 20px 16px; font: 600 30px/1.1 var(--head); letter-spacing: -.01em; }
+  #abaco h2 small { display: block; margin-top: 6px; font: 400 14px/1.45 var(--text); color: var(--dim); letter-spacing: 0; }
+  #abaco .cifre { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 20px 16px; border-bottom: 1px solid var(--rule); }
+  #abaco .cifre div { padding: 10px 12px; border-radius: var(--r-piccolo); background: rgba(255,255,255,.05); }
+  #abaco .cifre b { display: block; font: 600 24px/1 var(--head); font-variant-numeric: tabular-nums; }
   #abaco .cifre b.oro { color: var(--oak); }
-  #abaco .cifre span { font: 11px var(--tech); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
-  #elenco { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; padding-bottom: 10px; }
-  .gruppo-testa { display: flex; align-items: center; gap: 10px; padding: 16px 16px 7px; font: 11.5px var(--tech); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
-  .gruppo-testa::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
-  .gruppo-testa i { font-style: normal; color: var(--dim); }
-  .elemento { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 46px 1fr auto; column-gap: 12px; width: 100%; padding: 9px 16px 9px 14px;
-    border-left: 2px solid transparent; cursor: default; }
-  .elemento + .elemento { border-top: 1px solid rgba(238,232,220,.06); }
-  .elemento.scelto { background: var(--oak-wash); border-left-color: var(--oak); }
-  .elemento:focus-visible { outline: 1px solid var(--oak); outline-offset: -1px; }
-  .elemento .num { align-self: start; height: 24px; display: grid; place-items: center; border: 1px solid var(--oak-rule); border-radius: 2px;
-    font: 600 14px var(--tech); color: var(--oak); font-variant-numeric: tabular-nums; }
-  .elemento .nome { font-size: 14px; font-weight: 600; }
-  .elemento .nome em { font: 400 13px var(--tech); font-style: normal; color: var(--dim); margin-left: 6px; white-space: nowrap; }
-  .elemento .ruolo { font-size: 12.5px; color: var(--dim); }
-  .elemento .dove { text-align: right; font: 11px/1.5 var(--tech); font-stretch: 87.5%; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
-  .segno { display: inline-block; width: 7px; height: 7px; margin-left: 7px; transform: rotate(45deg) translateY(-1px); vertical-align: middle; }
-  .segno.vista { border: 1px solid var(--oak); }
+  #abaco .cifre span { display: block; margin-top: 5px; font-size: 12.5px; color: var(--faint); }
+  #elenco { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--rule-forte) transparent; padding: 4px 0 12px; }
+  .gruppo-testa { display: flex; align-items: baseline; gap: 8px; padding: 20px 20px 8px; font: 600 15px var(--head); color: var(--ink); }
+  .gruppo-testa i { font: 500 13px var(--text); font-style: normal; color: var(--faint); }
+  .elemento { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 44px 1fr auto; column-gap: 14px; width: calc(100% - 16px); margin: 0 8px;
+    padding: 10px 12px; border-radius: var(--r-piccolo); cursor: default; transition: background-color .12s; }
+  .elemento + .elemento { margin-top: 2px; }
+  .elemento.scelto { background: var(--oak-wash); box-shadow: inset 0 0 0 1px var(--oak-rule); }
+  .elemento:focus-visible { outline: 2px solid var(--oak); outline-offset: -2px; }
+  .elemento .num { align-self: start; height: 26px; display: grid; place-items: center; border-radius: var(--r-piccolo); background: rgba(255,255,255,.07);
+    font: 600 14px var(--head); color: var(--oak); font-variant-numeric: tabular-nums; }
+  .elemento.scelto .num { background: var(--oak); color: var(--su-oak); }
+  .elemento .nome { font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .elemento .nome em { font-size: 13px; font-weight: 500; font-style: normal; color: var(--faint); margin-left: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .elemento .ruolo { font-size: 13.5px; color: var(--dim); margin-top: 1px; }
+  .elemento .dove { text-align: right; font-size: 12.5px; line-height: 1.6; color: var(--faint); white-space: nowrap; }
+  .segno { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; vertical-align: middle; transform: translateY(-1px); }
+  .segno.vista { border: 1.5px solid var(--oak); }
   .segno.vista.trovato { background: var(--oak); }
-  .segno.nascosto { width: 9px; height: 1px; transform: none; background: var(--faint); }
+  .segno.nascosto { width: 10px; height: 2px; border-radius: 1px; background: var(--faint); }
   .elemento .apri { grid-column: 2 / 4; display: none; }
   .elemento.scelto .apri { display: block; }
-  .elemento .dati { margin-top: 9px; padding-top: 8px; }
-  #abaco footer { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px 11px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--dim); }
-  #abaco footer span { display: inline-flex; align-items: center; gap: 5px; }
-  #abaco footer .legenda { margin-left: auto; color: var(--faint); }
+  .elemento .dati { margin-top: 10px; padding-top: 10px; }
+  #abaco footer { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 12px 20px 14px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--dim); }
+  #abaco footer span { display: inline-flex; align-items: center; gap: 6px; }
+  #abaco footer .legenda { margin-left: auto; color: var(--faint); gap: 4px; }
+  #abaco footer .legenda .segno { margin-left: 10px; }
 
   /* --- smartphone e tablet (body.tocco, messo da main.js) ---------------------------------------------
      Leva a sinistra dove si appoggia il pollice, pulsanti a destra, scheda ancorata in alto a destra invece che accanto all'oggetto.
-     Le misure tengono conto di tacca e bordi arrotondati (safe-area). */
+     Le misure tengono conto di tacca e bordi arrotondati (safe-area); bersagli di tocco da 44px. */
   body:not(.tocco) .solo-tocco, body.tocco .solo-mouse { display: none !important; }
   body.tocco, body.tocco canvas { touch-action: none; }
   body.tocco { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
     --sx: max(12px, env(safe-area-inset-left)); --dx: max(12px, env(safe-area-inset-right)); --giu: max(12px, env(safe-area-inset-bottom)); }
-  #leva { position: fixed; width: 108px; height: 108px; margin: -54px 0 0 -54px; border-radius: 50%; pointer-events: none;
-    border: 1px solid rgba(238,232,220,.34); background: rgba(17,16,14,.28); }
-  #leva i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
-    background: rgba(238,232,220,.82); box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+  #leva { position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; pointer-events: none;
+    border: 1.5px solid rgba(255,255,255,.45); background: rgba(20,19,17,.35); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #leva i { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%;
+    background: rgba(255,255,255,.9); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
   #tocchi-su, #t-azioni { position: fixed; display: none; gap: 8px; }
   body.tocco.dentro:not(.abaco) #tocchi-su, body.tocco.dentro:not(.abaco) #t-azioni { display: flex; }
   #tocchi-su { top: 12px; right: var(--dx); }
   #t-azioni { bottom: var(--giu); right: var(--dx); flex-direction: column; align-items: flex-end; }
-  #tocchi-su button, #t-azioni button, #a-chiudi { all: unset; box-sizing: border-box; min-height: 40px; padding: 0 14px; display: inline-flex; align-items: center;
-    background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; font: 500 14px var(--tech); letter-spacing: .04em; color: var(--ink); }
-  #t-azioni button { min-height: 46px; padding: 0 16px; border-color: var(--oak-rule); color: var(--oak); }
-  #tocchi-su button:active, #t-azioni button:active, #a-chiudi:active { background: var(--oak-wash); border-color: var(--oak); }
-  #t-guida { min-width: 40px; justify-content: center; }
+  #tocchi-su button, #t-azioni button, #a-chiudi { all: unset; box-sizing: border-box; min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center;
+    background: var(--sheet); border: 1px solid var(--rule-forte); border-radius: 999px; box-shadow: var(--ombra); font: 600 14px var(--text); color: var(--ink); }
+  #t-azioni button { min-height: 48px; padding: 0 18px; background: var(--oak); border-color: transparent; color: var(--su-oak); }
+  #tocchi-su button:active, #a-chiudi:active { background: var(--oak-wash); border-color: var(--oak); }
+  #t-azioni button:active { background: var(--oak-hover); }
+  #t-guida { min-width: 44px; justify-content: center; }
   body.tocco #titolo { left: var(--sx); top: 12px; min-width: 0; }
-  body.tocco #titolo .riga { padding: 5px 10px; }
-  body.tocco #titolo h1 { font-size: 17px; }
+  body.tocco #titolo .riga { padding: 6px 12px; }
+  body.tocco #titolo .riga:first-child + .riga { padding-bottom: 9px; }
+  body.tocco #titolo h1 { font-size: 19px; }
   body.tocco #titolo .azioni, body.tocco #titolo .stato kbd, body.tocco #titolo .inv { display: none; }
   body.tocco #richiamo { display: none; }
-  body.tocco #scheda { left: auto !important; right: var(--dx); top: 62px !important; width: min(300px, 46vw); max-height: calc(100dvh - 62px - 124px); overflow: hidden; transform: none; }
-  body.tocco #scheda .corpo { padding: 9px 12px 11px; }
-  body.tocco #scheda h2 { font-size: 16px; }
+  body.tocco #scheda { left: auto !important; right: var(--dx); top: 68px !important; width: min(310px, 46vw); max-height: calc(100dvh - 68px - 128px); transform: none; }
+  body.tocco #scheda .corpo { padding: 6px 14px 13px; }
+  body.tocco #scheda h2 { font-size: 18px; }
   body.tocco #scheda .usa { display: none; }
-  body.tocco #invito { top: calc(50% + 30px); padding: 8px 12px 8px 9px; }
+  body.tocco #invito { top: calc(50% + 32px); padding: 8px 14px 8px 8px; }
   @media (max-height: 480px) {                           /* telefono in orizzontale: la scheda dice cos'e', i dati stanno nell'inventario */
     body.tocco #scheda .dati { display: none; }
-    body.tocco #scheda .nota { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; margin-top: 7px; }
+    body.tocco #scheda .nota { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; margin-top: 8px; }
     body.tocco #titolo .rif { display: none; }
-    body.tocco #ingresso .testa { padding: 12px 16px 10px; }
-    body.tocco #ingresso ul { padding: 8px 16px 12px; gap: 6px 12px; font-size: 13px; }
+    body.tocco #titolo .riga:first-child + .riga { padding-top: 7px; }
+    body.tocco #ingresso .testa { padding: 14px 18px 12px; }
+    body.tocco #ingresso strong { font-size: 24px; }
+    body.tocco #ingresso .scelte { margin-top: 10px; }
+    body.tocco #ingresso .scelte button { padding: 8px 16px; }
+    body.tocco #ingresso ul { padding: 10px 18px 14px; gap: 7px 12px; font-size: 13px; }
+    body.tocco #abaco h2 { font-size: 20px; padding-bottom: 8px; }
+    body.tocco #abaco .cifre { gap: 6px; padding-bottom: 10px; }
+    body.tocco #abaco .cifre div { display: flex; align-items: baseline; gap: 6px; padding: 5px 10px; }
+    body.tocco #abaco .cifre b { font-size: 17px; }
+    body.tocco #abaco .cifre span { margin-top: 0; }
   }
   body.tocco #abaco { top: 8px; bottom: max(8px, env(safe-area-inset-bottom)); right: var(--dx); width: min(520px, calc(100vw - var(--sx) - var(--dx))); }
-  body.tocco #abaco h2 { padding: 10px 16px 9px; font-size: 21px; }
+  body.tocco #abaco h2 { padding: 2px 18px 12px; font-size: 24px; }
   body.tocco #abaco h2 small { display: none; }
   body.tocco #abaco footer > span:not(.legenda) { display: none; }
   body.tocco #abaco footer .legenda { margin-left: 0; }
-  body.tocco #abaco header .riga { align-items: center; padding: 6px 8px 6px 16px; }
+  body.tocco #abaco header .riga { padding: 8px 8px 0 18px; }
   body.tocco #elenco { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
-  body.tocco .elemento { padding-top: 11px; padding-bottom: 11px; }
-  #a-chiudi { min-height: 34px; text-transform: none; }
+  body.tocco .elemento { padding-top: 12px; padding-bottom: 12px; }
+  #a-chiudi { min-height: 36px; cursor: pointer; }
+  #a-chiudi:hover, #a-chiudi:focus-visible { background: rgba(255,255,255,.1); }
   body.tocco #ingresso { max-height: calc(100dvh - 16px); overflow: hidden; }
   #ruota { position: fixed; inset: 0; display: none; place-content: center; justify-items: center; gap: 14px; padding: 24px; text-align: center; background: #14130f;
-    font: 15px/1.4 var(--text); color: var(--dim); }
-  #ruota b { font: 600 22px/1.1 var(--tech); color: var(--ink); }
-  #ruota i { width: 54px; height: 30px; border: 1.5px solid var(--oak); border-radius: 5px; }
+    font: 15px/1.45 var(--text); color: var(--dim); }
+  #ruota b { font: 600 24px/1.1 var(--head); color: var(--ink); }
+  #ruota i { width: 54px; height: 30px; border: 2px solid var(--oak); border-radius: 6px; }
   @media (orientation: portrait) and (max-width: 640px) { body.tocco #ruota { display: grid; } }
 
-  @media (prefers-reduced-motion: reduce) { #mirino, #cornice, #scheda, #richiamo, #abaco, #velo { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { #mirino, #cornice, #scheda, #richiamo, #abaco, #velo { transition: none !important; } #carico::before { animation: none; } }
 </style>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/" } }
@@ -242,7 +272,7 @@
 <div id="velo"></div>
 <section id="abaco" role="dialog" aria-label="Apparecchiature dell’ambiente">
   <header>
-    <div class="riga"><span>Proposta audio-video</span><span class="solo-mouse">Abaco apparecchiature</span><button type="button" id="a-chiudi" class="solo-tocco">Chiudi</button></div>
+    <div class="riga"><span>Proposta audio-video</span><span class="solo-mouse">Abaco apparecchiature</span><button type="button" id="a-chiudi">Chiudi</button></div>
     <h2><span id="a-nome">Sala CdA</span><small>Tutto quello che è in offerta per questo ambiente, anche ciò che non si vede.</small></h2>
     <div class="cifre">
       <div><b id="a-voci">0</b><span>Voci</span></div>
@@ -258,10 +288,15 @@
   </footer>
 </section>
 
-<button id="ingresso" hidden>
+<div id="ingresso" role="dialog" aria-labelledby="ingresso-titolo" hidden>
   <div class="testa">
     <div class="rif">Proposta audio-video · Ambienti di progetto</div>
-    <strong>Visita della sede <span class="solo-mouse">Clicca per entrare</span><span class="solo-tocco">Tocca per entrare</span></strong>
+    <strong id="ingresso-titolo">Visita della sede</strong>
+    <div class="scelte">
+      <button type="button" id="entra-pieno" class="primario solo-mouse"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>Entra a schermo intero</button>
+      <button type="button" id="entra-finestra" class="secondario solo-mouse">In finestra</button>
+      <button type="button" id="entra-tocco" class="primario solo-tocco">Tocca per entrare</button>
+    </div>
   </div>
   <ul class="solo-tocco">
     <li><span><kbd>Sinistra</kbd></span><span>appoggia il pollice e trascina per camminare</span></li>
@@ -278,10 +313,10 @@
     <li><span><kbd>M</kbd><kbd>P</kbd></span><span>in sala CdA <kbd>M</kbd> alza i monitor dal tavolo; <kbd>P</kbd> accende e spegne lo schermo o il proiettore</span></li>
     <li><span><kbd>I</kbd></span><span>inventario dell’ambiente, anche quello che non si vede</span></li>
     <li><span><kbd>Porte</kbd></span><span>si aprono da sole quando ti avvicini</span></li>
-    <li><span><kbd>F</kbd><kbd>L</kbd></span><span>contatore dei fotogrammi; <kbd>L</kbd> confronta l’aspetto con e senza correzione colore</span></li>
+    <li><span><kbd>F</kbd></span><span>contatore dei fotogrammi</span></li>
     <li><span><kbd>Esc</kbd></span><span>libera il mouse</span></li>
   </ul>
-</button>
+</div>
 <div id="ruota"><i></i><b>Ruota il telefono</b><span>La visita si fa in orizzontale.</span></div>
 <div id="carica"><div>Preparazione della sede</div><div id="barra"><i></i></div></div>
 <script type="module" src="./main.js"></script>

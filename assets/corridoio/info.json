@@ -10,7 +10,8 @@
  ],
  "mappe": {
   "BAKE_statico": "lm_statico.exr",
-  "BAKE_sedie": null
+  "BAKE_sedie": null,
+  "BAKE_esterno": "lm_esterno.exr"
  },
  "prodotti": {},
  "ante": []

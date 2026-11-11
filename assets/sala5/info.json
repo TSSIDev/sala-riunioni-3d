@@ -10,7 +10,8 @@
  ],
  "mappe": {
   "BAKE_statico": "lm_statico.exr",
-  "BAKE_sedie": "lm_sedie.exr"
+  "BAKE_sedie": "lm_sedie.exr",
+  "BAKE_esterno": "lm_esterno.exr"
  },
  "prodotti": {
   "Samsung QM65C": [
