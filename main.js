@@ -77,6 +77,17 @@ function gruppoBake(o) {
 const cotti = [], liberi = [];
 const vetro = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .04, metalness: 0, transparent: true, opacity: .07, depthWrite: false });
 const satinato = new THREE.MeshStandardMaterial({ color: 0xf2f6f6, roughness: .6, metalness: 0, transparent: true, opacity: .55, depthWrite: false });
+// vetri rimasti nei gruppi cotti (tavolo in vetro, sportello fume'): niente trasmissione, altrimenti three.js ridisegna
+// tutta la scena una seconda volta a ogni fotogramma. Un velo trasparente con la tinta del vetro, uno per materiale.
+const vetriCotti = new Map();
+function vetroSemplice(m) {
+  if (!vetriCotti.has(m.name)) {
+    const chiaro = (m.color.r + m.color.g + m.color.b) / 3;   // piu' il vetro e' scuro, piu' copre
+    vetriCotti.set(m.name, new THREE.MeshStandardMaterial({ name: m.name, color: m.color.clone().multiplyScalar(chiaro), roughness: Math.max(m.roughness, .04), metalness: 0,
+      transparent: true, opacity: Math.min(.6, .05 + (1 - chiaro)), depthWrite: false, side: m.side, envMap: riflessi, envMapIntensity: 1. }));
+  }
+  return vetriCotti.get(m.name);
+}
 const nodiAnte = new Map();                              // nome dell'anta -> { o, base }
 const contenuti = [];                                    // immagini su monitor e telo: si accendono e si spengono
 const monitor = [];                                      // opzione 3: monitor a scomparsa nel tavolo
@@ -102,7 +113,9 @@ async function caricaZona(z, c) {
     if (/^Opzione_3_-_Cornice/.test(o.name)) { cornici.push(o); o.visible = stato.monitorVisti; }
     if (!o.isMesh) return;
     const g = gruppoBake(o);
-    if (g) {
+    if (g && o.material.transmission > 0) {
+      o.material = vetroSemplice(o.material); o.renderOrder = 3;
+    } else if (g) {
       const m = o.material.clone();
       m.lightMap = g === 'statico' ? lmS : lmC;
       m.lightMapIntensity = Math.PI;                     // Cycles salva E/pi, Three.js vuole l'irradianza
@@ -160,7 +173,7 @@ function riprendi(x, y) {
   riflessi?.dispose(); riflessi = nuovo;
   for (const m of cotti) { m.envMap = riflessi; m.envMapIntensity = m.metalness > .5 ? 1. : .12; m.needsUpdate = true; }
   for (const m of liberi) { m.envMap = riflessi; m.envMapIntensity = 1.1; m.needsUpdate = true; }
-  for (const m of [vetro, satinato]) { m.envMap = riflessi; m.envMapIntensity = 1.; m.needsUpdate = true; }
+  for (const m of [vetro, satinato, ...vetriCotti.values()]) { m.envMap = riflessi; m.envMapIntensity = 1.; m.needsUpdate = true; }
 }
 
 // --- partenza: la zona in cui si entra si carica per prima, le altre in ordine di distanza --------------------
@@ -536,13 +549,44 @@ function punta() {
   ui['r-punto'].setAttribute('cx', ax); ui['r-punto'].setAttribute('cy', ay);
 }
 
+// --- contatore (tasto F, oppure ?fps nell'indirizzo): fotogrammi al secondo, fotogramma peggiore, triangoli e oggetti disegnati
+const conta = { su: false, n: 0, t0: 0, peggio: 0, el: $('conta'), fps: $('c-fps'), ms: $('c-ms'), tri: $('c-tri'), gpu: $('c-gpu') };
+renderer.info.autoReset = false;                         // il fotogramma passa da piu' riprese (scena, bloom): si azzera a mano per contarle tutte
+{
+  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const nome = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+  // "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Ti (0x...) Direct3D11 ...)" -> "GeForce RTX 3060 Ti"; SwiftShader = senza scheda video
+  const breve = (/ANGLE \([^,]*,\s*([^,(]+)/.exec(nome)?.[1] ?? nome).replace(/^(NVIDIA|AMD|Intel\(R\))\s+/, '').trim();
+  conta.gpu.textContent = /swiftshader|llvmpipe|basic render/i.test(nome) ? 'Senza scheda video (software)'
+    : /ANGLE|NVIDIA|GeForce|AMD|Radeon|Intel|Apple|Adreno|Mali/i.test(nome) ? breve : 'Scheda video nascosta dal browser';
+}
+function mostraConta(si) {
+  conta.su = si; conta.el.hidden = !si; conta.n = 0; conta.peggio = 0; conta.t0 = performance.now();
+  try { localStorage.setItem('conta', si ? '1' : ''); } catch { /* navigazione privata */ }
+}
+function misura(ora, ms) {
+  conta.n++; conta.peggio = Math.max(conta.peggio, ms);
+  if (ora - conta.t0 < 500) return;
+  const r = renderer.info.render;
+  conta.fps.textContent = Math.round(conta.n * 1000 / (ora - conta.t0));
+  conta.ms.textContent = `peggiore ${Math.round(conta.peggio)} ms`;
+  const tri = r.triangles >= 1e6 ? `${(r.triangles / 1e6).toFixed(2).replace('.', ',')} M` : `${Math.round(r.triangles / 1000)} mila`;
+  conta.tri.textContent = `${tri} triangoli · ${r.calls} disegni`;
+  conta.n = 0; conta.peggio = 0; conta.t0 = ora;
+}
+addEventListener('keydown', (e) => { if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey) mostraConta(!conta.su); });
+let contaSalvato = false; try { contaSalvato = !!localStorage.getItem('conta'); } catch { /* navigazione privata */ }
+mostraConta(new URLSearchParams(location.search).has('fps') || contaSalvato);
+
 let prima = performance.now();
 renderer.setAnimationLoop((ora) => {
-  const dt = Math.min(Math.max(ora - prima, 0) / 1000, .05);
+  const ms = Math.max(ora - prima, 0), dt = Math.min(ms / 1000, .05);
   prima = ora;
+  renderer.info.reset();
   aggiorna(dt, ora / 1000);
   punta();
   composer.render();
+  if (conta.su) misura(ora, ms);
 });
 setInterval(azioni, 1000);                              // la riga dei tasti segue quello che e' gia' stato caricato
-window.__demo = { TOCCO, leva, entra, io, tasti, prova, mondo, punta, usa, stato, zoneProdotti, contenuti, monitor, nodiAnte, ZONE, camera, scene, apriAbaco };
+window.__demo = { renderer, conta, TOCCO, leva, entra, io, tasti, prova, mondo, punta, usa, stato, zoneProdotti, contenuti, monitor, nodiAnte, ZONE, camera, scene, apriAbaco };
